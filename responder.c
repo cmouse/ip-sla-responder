@@ -180,7 +180,7 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    uint32_t tmp,recv;
    struct timespec res;
    
-   recv = get_ts_utc(&res);
+   recv = get_ts_utc(&res0);
 
    swapmac(bytes);
    swapip(bytes);
@@ -197,14 +197,17 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
        *(uint16_t*)(bytes+ICMP_DATA+28) == 0x0100 &&
        *(uint16_t*)(bytes+ICMP_DATA+30) == 0x1096) {
       // this is a juniper RPM format. we need to put here the recv/trans stamp too
-      uint32_t usec;
+      uint32_t usec,sent;
       memcpy(bytes+ICMP_START+12, &recv, 4);
-      memcpy(bytes+ICMP_START+16, &recv, 4);
       clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
       usec = htonl(res.tv_nsec/1000);
       res.tv_sec = htonl(res.tv_sec);
       memcpy(bytes+ICMP_START+0x2c, &res.tv_sec, 4);
       memcpy(bytes+ICMP_START+0x30, &usec, 4);
+      clock_gettime(CLOCK_REALTIME, &res);
+      // just for the sake of appearances
+      sent = get_ts_utc(&res);
+      memcpy(bytes+ICMP_START+16, &sent, 4);
       *(uint32_t*)(bytes+ICMP_START) = 0;
       // change to response
       bytes[ICMP_START] = 0x0e;
