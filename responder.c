@@ -19,7 +19,6 @@
 #define ETH_O_SOURCE 6
 #define ETH_O_PROTO 12
 
-
 #define IP_MAGIC 45
 
 #define IP_START ETH_HLEN+4
@@ -43,8 +42,11 @@
 #define UDP_CHECKSUM UDP_START+6
 #define UDP_DATA UDP_START+8
 
+#define ARP_START ETH_HLEN+4
+
 struct timespec res0;
 static uint32_t dest_ip;
+static u_char dest_mac[ETH_ALEN];
 
 uint32_t get_ts_utc(struct timespec *res) {
    struct tm tm;
@@ -132,6 +134,60 @@ inline void swapip(u_char *bytes) {
    *(uint32_t*)(bytes+IP_O_SADDR) = *(uint32_t*)(bytes+IP_O_DADDR);
    *(uint32_t*)(bytes+IP_O_DADDR) = tmp;
 } 
+
+void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
+/*
+0000  d0 d0 fd 09 34 2c 88 43 e1 de 22 c0 81 00 c0 c9   ....4,.C..".....
+0010  08 06 00 01 08 00 06 04 00 01 88 43 e1 de 22 c0   ...........C..".
+0020  3e ec 84 9e d0 d0 fd 09 34 2c 3e ec 84 9f 00 00   >.......4,>.....
+0030  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
+Address Resolution Protocol (request)
+    Hardware type: Ethernet (1)
+    Protocol type: IP (0x0800)
+    Hardware size: 6
+    Protocol size: 4
+    Opcode: request (1)
+    [Is gratuitous: False]
+    Sender MAC address: 88:43:e1:de:22:c0 (88:43:e1:de:22:c0)
+    Sender IP address: 62.236.132.158 (62.236.132.158)
+    Target MAC address: d0:d0:fd:09:34:2c (d0:d0:fd:09:34:2c)
+    Target IP address: 62.236.132.159 (62.236.132.159)
+Address Resolution Protocol (reply)
+    Hardware type: Ethernet (1)
+    Protocol type: IP (0x0800)
+    Hardware size: 6
+    Protocol size: 4
+    Opcode: reply (2)
+    [Is gratuitous: False]
+    Sender MAC address: d0:d0:fd:09:34:2c (d0:d0:fd:09:34:2c)
+    Sender IP address: 62.236.132.159 (62.236.132.159)
+    Target MAC address: 88:43:e1:de:22:c0 (88:43:e1:de:22:c0)
+    Target IP address: 62.236.132.158 (62.236.132.158)
+*/
+    u_char tmp[ETH_ALEN];
+    if (*(uint16_t*)(bytes+ARP_START)!=0x0100 ||
+        *(uint16_t*)(bytes+ARP_START+2)!=ETH_P_IP ||
+        *(uint8_t*)(bytes+ARP_START+4)!=0x06 ||
+        *(uint8_t*)(bytes+ARP_START+7)!=0x01 ||
+        *(uint32_t*)(bytes+ARP_START+24)!=dest_ip) {
+      return; // ignore
+    }
+
+    // move sender to target
+    memmove(bytes, bytes+ETH_ALEN, ETH_ALEN);
+    // in case it's broadcast
+    memcpy(bytes+ETH_ALEN, dest_mac, ETH_ALEN);
+    // move sender to target, again
+    memmove(bytes+ARP_START, bytes+ARP_START+10, 10);
+    // fill in sender
+    memcpy(bytes+ARP_START, dest_mac, ETH_ALEN);
+    memcpy(bytes+ARP_START+ETH_ALEN, &dest_ip, 4);
+    // change opcode to reply
+    bytes[7] = 0x02;
+    // send it back (arp reply is 28 bytes)
+    send(fd, bytes, 0, 28);
+}
+
 
 void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
    uint32_t recv;
@@ -235,24 +291,27 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 
    if (*(unsigned short*)(bytes+ETH_O_PROTO) != htons(ETH_P_8021Q)) return;   
 
-   plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; // total size of entire packet
+   if (*(unsigned short*)(bytes+ETH_O_PROTO+4) == htons(ETH_P_IP)) {
+       plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; // total size of entire packet
+       if (plen > 1500) return; // sorry, we are bit silly
+       memcpy(response,bytes,plen);
 
-   if (plen > 1500) return; // sorry, we are bit silly
+       // ensure dst ip is correct
+       if (memcmp(response+IP_O_DADDR, &dest_ip, sizeof dest_ip)) return;
 
-   memcpy(response,bytes,plen);
-
-   // ensure dst ip is correct
-   if (memcmp(response+IP_O_DADDR, &dest_ip, sizeof dest_ip)) return;
-
-   switch(bytes[IP_O_PROTO]) {
-     case 1:
-       // it's icmp.
-       process_and_send_icmp(fd,response,plen);
-       break;
-     case 17:
-       // udp
-       process_and_send_udp(fd,response,plen);
-       break;
+       switch(bytes[IP_O_PROTO]) {
+         case 1:
+            // it's icmp.
+            process_and_send_icmp(fd,response,plen);
+            break;
+          case 17:
+            // udp
+            process_and_send_udp(fd,response,plen);
+            break;
+       }
+   } else if (*(unsigned short*)(bytes+ETH_O_PROTO+4) == htons(ETH_P_ARP)) {
+      memcpy(response,bytes,h->caplen);
+      process_and_send_arp(fd,response,h->caplen);
    }
 }
 
@@ -329,14 +388,13 @@ int main(int argc, char * const argv[]) {
    char errbuf[PCAP_ERRBUF_SIZE];
    char interface[IFNAMSIZ];
    char ipbuf[100];
-   unsigned char mymac[ETH_ALEN];
    int debug;
    inet_pton(AF_INET, "62.236.255.178", &dest_ip);
-   memset(mymac, 0, sizeof mymac);
+   memset(dest_mac, 0, sizeof dest_mac);
    memset(interface, 0, sizeof interface);
    debug = 0;
 
-   if (getopt_responder(argc, argv, &dest_ip, mymac, &debug, interface, IFNAMSIZ) != EXIT_SUCCESS) {
+   if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debug, interface, IFNAMSIZ) != EXIT_SUCCESS) {
       return EXIT_FAILURE;
    }
 
@@ -363,7 +421,7 @@ int main(int argc, char * const argv[]) {
  
    // do we have a valid mac?
    for(n = 0; n < ETH_ALEN; n++) {
-     valid_mac = mymac[n];
+     valid_mac = dest_mac[n];
      if (valid_mac > 0) break;
    }
 
@@ -372,7 +430,7 @@ int main(int argc, char * const argv[]) {
      memset(&ifr,0,sizeof ifr);
      snprintf(ifr.ifr_name, IFNAMSIZ, interface);
      ioctl(fd, SIOCGIFHWADDR, &ifr);
-     memcpy(mymac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+     memcpy(dest_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
    }
 
    inet_ntop(AF_INET, &dest_ip, ipbuf, sizeof ipbuf);
@@ -397,7 +455,7 @@ int main(int argc, char * const argv[]) {
      exit(1);
    }
    pcap_set_snaplen(p, 65535);
-   printf("Listening on %s (mac: %02x:%02x:%02x:%02x:%02x:%02x ip: %s)\n", interface, mymac[0], mymac[1], mymac[2], mymac[3], mymac[4], mymac[5], ipbuf);
+   printf("Listening on %s (mac: %02x:%02x:%02x:%02x:%02x:%02x ip: %s)\n", interface, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], ipbuf);
 
    pcap_loop(p, 0, pak_handler, (u_char*)&fd);
    pcap_close(p);
