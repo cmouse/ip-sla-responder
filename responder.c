@@ -42,11 +42,11 @@
 struct timespec res0;
 static uint32_t dest_ip;
 
-void get_ts_utc(struct timespec *res) {
+uint32_t get_ts_utc(struct timespec *res) {
    struct tm tm;
    clock_gettime(CLOCK_REALTIME,res);
    gmtime_r(&res->tv_sec, &tm);
-   res->tv_sec = tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec;
+   return (tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec)*1000 + (res->tv_nsec/1000);
 }
 
 void bin2hex(const unsigned char *data, size_t dlen) {
@@ -87,11 +87,11 @@ inline uint16_t ip_checksum(const void *vdata, size_t dlen, uint16_t *target) {
 }
 
 void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
-   uint32_t tmp;
+   uint32_t tmp,recv;
    char etmp[ETH_ALEN];
-   struct timespec res,recv;
-
-   get_ts_utc(&recv);
+   struct timespec res;
+   
+   recv = get_ts_utc(&res);
 
    memcpy(etmp, bytes, ETH_ALEN);
    memmove(bytes, bytes+ETH_ALEN, ETH_ALEN);
@@ -115,22 +115,24 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
        *(uint16_t*)(bytes+ICMP_DATA+30) == 0x1096) {
       // this is a juniper RPM format. we need to put here the recv/trans stamp too
       uint32_t usec;
-      memcpy(bytes+ICMP_START+12, &recv.tv_sec, 4);
-      usec = recv.tv_nsec/1000;
-      memcpy(bytes+ICMP_START+16, &usec, 4);
-      memcpy(bytes+ICMP_DATA+29, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
+      memcpy(bytes+ICMP_START+12, &recv, 4);
+      memcpy(bytes+ICMP_START+16, &recv, 4);
+//      memcpy(bytes+0x43, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
       clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
-      usec = res.tv_nsec/1000;
-      memcpy(bytes+ICMP_DATA+46, &res.tv_sec, 4);
-      memcpy(bytes+ICMP_DATA+50, &usec, 4);
-      *(uint32_t*)(bytes+ICMP_START) = 0x000000e0;
+      usec = htonl(res.tv_nsec/1000);
+      res.tv_sec = htonl(res.tv_sec);
+      memcpy(bytes+ICMP_START+0x2c, &res.tv_sec, 4);
+      memcpy(bytes+ICMP_START+0x30, &usec, 4);
+      *(uint32_t*)(bytes+ICMP_START) = 0;
+      // change to response
+      bytes[ICMP_START] = 0x0e;
    }
    // fix icmp header
    // recalculate checksum
    ip_checksum(bytes+ICMP_START, plen - ETH_HLEN - 4 - 20, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
    send(fd, bytes, plen, 0);
-   clock_gettime(CLOCK_REALTIME, &res);
+//   clock_gettime(CLOCK_REALTIME, &res);
 //   printf("%lu s %lu ns\n", res.tv_sec - res0.tv_sec, res.tv_nsec - res0.tv_nsec);   
 }
 
