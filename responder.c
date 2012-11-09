@@ -13,7 +13,7 @@
 #include <netpacket/packet.h>
 #include <time.h>
 
-#define PCAP_FILTER_OWN_AND_ICMP_OR_UDP "ether dst d0:d0:fd:09:34:2c and (udp or icmp)" 
+#define PCAP_FILTER_OWN_AND_ICMP_OR_UDP "arp or (dst host %s and (udp or icmp))"
 
 #define ETH_O_DEST 0
 #define ETH_O_SOURCE 6
@@ -37,8 +37,17 @@
 #define IP_O_DADDR IP_START+16
 
 #define ICMP_START IP_START+20
+#define ICMP_DATA ICMP_START+8
 
 struct timespec res0;
+static uint32_t dest_ip;
+
+void get_ts_utc(struct timespec *res) {
+   struct tm tm;
+   clock_gettime(CLOCK_REALTIME,res);
+   gmtime_r(&res->tv_sec, &tm);
+   res->tv_sec = tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec;
+}
 
 void bin2hex(const unsigned char *data, size_t dlen) {
    size_t i;
@@ -80,7 +89,9 @@ inline uint16_t ip_checksum(const void *vdata, size_t dlen, uint16_t *target) {
 void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    uint32_t tmp;
    char etmp[ETH_ALEN];
-   struct timespec res;
+   struct timespec res,recv;
+
+   get_ts_utc(&recv);
 
    memcpy(etmp, bytes, ETH_ALEN);
    memmove(bytes, bytes+ETH_ALEN, ETH_ALEN);
@@ -95,14 +106,32 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
    ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
 
+   // check for ICMP type
+   if (*(uint16_t*)(bytes+ICMP_START) == 8) { // icmp echo
+     // this is simple ping, change it to response.
+     *(uint32_t*)(bytes+ICMP_START) = 0;
+   } else if (*(uint16_t*)(bytes+ICMP_START) == 0x000d && 
+       *(uint16_t*)(bytes+ICMP_DATA+28) == 0x0100 &&
+       *(uint16_t*)(bytes+ICMP_DATA+30) == 0x1096) {
+      // this is a juniper RPM format. we need to put here the recv/trans stamp too
+      uint32_t usec;
+      memcpy(bytes+ICMP_START+12, &recv.tv_sec, 4);
+      usec = recv.tv_nsec/1000;
+      memcpy(bytes+ICMP_START+16, &usec, 4);
+      memcpy(bytes+ICMP_DATA+29, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
+      clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
+      usec = res.tv_nsec/1000;
+      memcpy(bytes+ICMP_DATA+46, &res.tv_sec, 4);
+      memcpy(bytes+ICMP_DATA+50, &usec, 4);
+      *(uint32_t*)(bytes+ICMP_START) = 0x000000e0;
+   }
    // fix icmp header
-   *(uint32_t*)(bytes+ICMP_START) = 0;
    // recalculate checksum
    ip_checksum(bytes+ICMP_START, plen - ETH_HLEN - 4 - 20, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
    send(fd, bytes, plen, 0);
    clock_gettime(CLOCK_REALTIME, &res);
-   printf("%lu s %lu ns\n", res.tv_sec - res0.tv_sec, res.tv_nsec - res0.tv_nsec);   
+//   printf("%lu s %lu ns\n", res.tv_sec - res0.tv_sec, res.tv_nsec - res0.tv_nsec);   
 }
 
 void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
@@ -121,8 +150,10 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 
    if (plen > 1500) return; // sorry, we are bit silly
 
-   // determine ip packet size
    memcpy(response,bytes,plen);
+
+   // ensure dst ip is correct
+   if (memcmp(response+IP_O_DADDR, &dest_ip, sizeof dest_ip)) return;
 
    if (bytes[IP_O_PROTO] == 1) {
      // it's icmp.
@@ -130,44 +161,149 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    }
 }
 
-void bpf_program(pcap_t *p, struct bpf_program *fp)
+void bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
 {
   char errbuf[PCAP_ERRBUF_SIZE];
-  if (pcap_compile(p, fp, PCAP_FILTER_OWN_AND_ICMP_OR_UDP, 1, PCAP_NETMASK_UNKNOWN) != 0) {
+  char program[4096];
+  snprintf(program, sizeof program, PCAP_FILTER_OWN_AND_ICMP_OR_UDP, ip);
+  if (pcap_compile(p, fp, program, 1, PCAP_NETMASK_UNKNOWN) != 0) {
     pcap_perror(p, "pcap_compile");
     exit(1);
   } 
 }
 
-int main(void) {
-   int fd;
+int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, char *interface, size_t iflen) 
+{
+  char opt;
+  while((opt = getopt(argc, argv, "I:i:m:hv:")) != -1) {
+     switch(opt) {
+       case 'I':
+         strncpy(interface, optarg, iflen);
+         break;
+       case 'i':
+         if (inet_pton(AF_INET, optarg, ip) != 1) {
+           fprintf(stderr, "Invalid IP address %s supplied\r\n", optarg);
+           return EXIT_FAILURE;
+         }
+         break;
+       case 'm': {
+         /* convert by splitting, MAC must be ETH_ALEN long */
+         char *ptr = optarg;
+         char *optr = optarg;
+         unsigned char *mptr = mac;
+         size_t c = 0;
+         while(optr != NULL && c++ < ETH_ALEN) {
+            ptr = strchr(optr, ':');
+            // happy windows users?
+            if (ptr == NULL) ptr = strchr(optr, '-');
+            sscanf(optr, "%02x", (unsigned int*)mptr++);
+            if (ptr != NULL) ptr++;
+            optr = ptr;
+         }
+         if (optr != NULL) {
+            // duh. 
+            fprintf(stderr, "Invalid MAC address %s supplied\r\n", optarg);
+            return EXIT_FAILURE;
+         }  
+         break;
+       }
+       case 'v':
+         *verbose = atoi(optarg);
+         break;
+       default:
+         printf("Usage: responder -h -v level -I if -m mac -i ip\r\n");
+         printf("\t-h      \t Help message\r\n");
+         printf("\t-i ip   \t IP address to listen on (defaults to 192.168.0.1) \r\n");
+         printf("\t-m mac  \t MAC address for IP (uses interface if empty)\r\n");
+         printf("\t-I if   \t Interface to listen on (defaults to whatever pcap gives)\r\n");
+         printf("\t-l level\t Message level (0-3, defaults to 0)\r\n");
+         printf("\n");
+         return EXIT_FAILURE;
+     } 
+  }
+  return EXIT_SUCCESS;
+}
+
+int main(int argc, char * const argv[]) {
+   int fd,n,valid_mac;
    struct ifreq ifr;
    struct sockaddr_ll sa;
    struct bpf_program fp;
    int val = 4;
    pcap_t *p;
    char errbuf[PCAP_ERRBUF_SIZE];
+   char interface[IFNAMSIZ];
+   char ipbuf[100];
+   unsigned char mymac[ETH_ALEN];
+   int debug;
+   inet_pton(AF_INET, "62.236.255.178", &dest_ip);
+   memset(mymac, 0, sizeof mymac);
+   memset(interface, 0, sizeof interface);
+   debug = 0;
+
+   if (getopt_responder(argc, argv, &dest_ip, mymac, &debug, interface, IFNAMSIZ) != EXIT_SUCCESS) {
+      return EXIT_FAILURE;
+   }
+
+   if (strlen(interface) == 0) {
+     pcap_if_t *alldevsp, *devptr;
+     if (pcap_findalldevs(&alldevsp, errbuf)) {
+       fprintf(stderr, "pcap_findalldevs: %s\n", errbuf);
+       return EXIT_FAILURE;
+     }
+     for(devptr = alldevsp; devptr != NULL; devptr = devptr->next) {
+        if ((devptr->flags & PCAP_IF_LOOPBACK) == PCAP_IF_LOOPBACK) continue;
+        // OK, this is our interface. 
+        break; 
+     }
+     if (devptr == NULL) {
+        fprintf(stderr, "cannot find suitable interface for operations\r\n");
+        return EXIT_FAILURE;
+     }
+     strncpy(interface, devptr->name, sizeof interface);
+     pcap_freealldevs(alldevsp);
+   }
+
    fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+ 
+   // do we have a valid mac?
+   for(n = 0; n < ETH_ALEN; n++) {
+     valid_mac = mymac[n];
+     if (valid_mac > 0) break;
+   }
+
+   if (valid_mac == 0) { 
+     // need mac
+     memset(&ifr,0,sizeof ifr);
+     snprintf(ifr.ifr_name, IFNAMSIZ, interface);
+     ioctl(fd, SIOCGIFHWADDR, &ifr);
+     memcpy(mymac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
+   }
+
+   inet_ntop(AF_INET, &dest_ip, ipbuf, sizeof ipbuf);
    memset(&ifr,0,sizeof ifr);
-   sprintf(ifr.ifr_name, "eth0");
+   snprintf(ifr.ifr_name, IFNAMSIZ, interface);
    ioctl(fd, SIOCGIFINDEX, &ifr);
    memset(&sa,0,sizeof sa);
    sa.sll_family = AF_PACKET;
    sa.sll_ifindex = ifr.ifr_ifindex;
    sa.sll_protocol = htons(ETH_P_ALL);
    bind(fd, (struct sockaddr*)&sa, sizeof sa);
-   p = pcap_create("eth0", errbuf);
+
+   p = pcap_create(interface, errbuf);
    pcap_activate(p);
    if (pcap_set_datalink(p, 1) != 0) {
      pcap_perror(p, "pcap_set_datalink");
      exit(1);
    }
-   bpf_program(p, &fp);
+   bpf_program(p, &fp,ipbuf);
    if (pcap_setfilter(p, &fp)!=0) {
      pcap_perror(p, "pcap_setfilter");
      exit(1);
    }
    pcap_set_snaplen(p, 65535);
+   printf("Listening on %s (mac: %02x:%02x:%02x:%02x:%02x:%02x ip: %s)\n", interface, mymac[0], mymac[1], mymac[2], mymac[3], mymac[4], mymac[5], ipbuf);
+
    pcap_loop(p, 0, pak_handler, (u_char*)&fd);
    pcap_close(p);
 
