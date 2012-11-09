@@ -1,0 +1,5 @@
+*.pcap
+*.o
+responder
+*.bak
+test*
