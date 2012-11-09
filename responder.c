@@ -19,13 +19,10 @@
 #define ETH_O_SOURCE 6
 #define ETH_O_PROTO 12
 
-#define RESP_ETH_HEADER(x) ((const struct ethhdr*)(x))
 
 #define IP_MAGIC 45
 
 #define IP_START ETH_HLEN+4
-#define RESP_IP_HEADER(x) ((const struct iphdr*)(x+IP_START))
-
 #define IP_O_TOS IP_START+1
 #define IP_O_TOT_LEN IP_START+2
 #define IP_O_ID IP_START+4
@@ -38,6 +35,13 @@
 
 #define ICMP_START IP_START+20
 #define ICMP_DATA ICMP_START+8
+
+#define UDP_START IP_START+20
+#define UDP_SPORT UDP_START
+#define UDP_DPORT UDP_START+2
+#define UDP_LEN UDP_START+4
+#define UDP_CHECKSUM UDP_START+6
+#define UDP_DATA UDP_START+8
 
 struct timespec res0;
 static uint32_t dest_ip;
@@ -65,7 +69,7 @@ inline uint16_t ip_checksum(const void *vdata, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
-   unsigned char *buff = (unsigned char *)vdata;
+   const unsigned char *buff = (const unsigned char *)vdata;
 
    // make 16 bit words out of every two adjacent 8 bit words in the packet
    // and add them up
@@ -86,21 +90,100 @@ inline uint16_t ip_checksum(const void *vdata, size_t dlen, uint16_t *target) {
    return *target;
 }
 
+inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target) {
+   register uint16_t word16;
+   register uint32_t sum=0;
+   register size_t i;
+   uint16_t pad;
+   if ((dlen&1)==1) {
+      pad=1;
+      buff[dlen]=0;
+   }
+   for (i=0;i<dlen+pad;i=i+2){
+     word16 =((buff[i]<<8)&0xff00)+(buff[i+1]&0xff);
+     sum += (uint32_t)word16;
+   }
+   for (i=0;i<4;i=i+2){
+     word16 =((src_addr[i]<<8)&0xFF00)+(src_addr[i+1]&0xFF);
+     sum=sum+word16;
+   }
+   for (i=0;i<4;i=i+2){
+     word16 =((dest_addr[i]<<8)&0xFF00)+(dest_addr[i+1]&0xFF);
+     sum=sum+word16; 
+   }
+   sum = sum + 17 + dlen;
+   sum = (sum & 0xffff)+(sum >> 16);
+   sum += (sum >> 16);
+   sum = ~sum;
+   (*target) = htons(((uint16_t)sum));
+   return *target;
+}
+
+inline void swapmac(u_char *bytes) {
+   u_char etmp[ETH_ALEN];
+   memcpy(etmp, bytes, ETH_ALEN);
+   memmove(bytes, bytes+ETH_ALEN, ETH_ALEN);
+   memcpy(bytes+ETH_ALEN, etmp, ETH_ALEN);
+}
+
+inline void swapip(u_char *bytes) {
+   uint32_t tmp;
+   tmp = *(uint32_t*)(bytes+IP_O_SADDR);
+   *(uint32_t*)(bytes+IP_O_SADDR) = *(uint32_t*)(bytes+IP_O_DADDR);
+   *(uint32_t*)(bytes+IP_O_DADDR) = tmp;
+} 
+
+void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
+   uint32_t recv;
+   struct timespec res;
+   
+   recv = get_ts_utc(&res);
+   swapmac(bytes);
+   swapip(bytes);
+
+   // that's the IP part, recalculate checksum
+   *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
+   ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
+
+   if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(7)) {
+      // just send it back with swapped ports
+      uint16_t tmp = *(uint16_t*)(bytes+UDP_DPORT);
+      *(uint16_t*)(bytes+UDP_DPORT) = *(uint16_t*)(bytes+UDP_SPORT);
+      *(uint16_t*)(bytes+UDP_SPORT) = tmp;
+      // wonder if this is RPM
+      if (*(uint16_t*)(bytes+UDP_DATA+28) == 0x0100 &&
+       *(uint16_t*)(bytes+UDP_DATA+30) == 0x1096 && plen > 90) {
+         // this is a juniper RPM format. we need to put here the recv/trans stamp too
+         uint32_t usec;
+         memcpy(bytes+UDP_START+12, &recv, 4);
+         memcpy(bytes+UDP_START+16, &recv, 4);
+         memcpy(bytes+UDP_START+0x1c, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
+         clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
+         usec = htonl(res.tv_nsec/1000);
+         res.tv_sec = htonl(res.tv_sec);
+         memcpy(bytes+UDP_START+0x2c, &res.tv_sec, 4);
+         memcpy(bytes+UDP_START+0x30, &usec, 4);
+      }
+   } else {
+      return; // do not process
+   }
+
+   *(uint16_t*)(bytes+UDP_CHECKSUM) = 0;
+   tcp_checksum(bytes+IP_O_SADDR, bytes+IP_O_DADDR, bytes+UDP_START, ntohs(*(uint16_t*)(bytes+UDP_LEN)), (uint16_t*)(bytes+UDP_CHECKSUM));
+   // as per spec
+   if (*(uint16_t*)(bytes+UDP_CHECKSUM) == 0) 
+     *(uint16_t*)(bytes+UDP_CHECKSUM) = 0xffff;
+   send(fd, bytes, plen, 0);
+}
+
 void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    uint32_t tmp,recv;
-   char etmp[ETH_ALEN];
    struct timespec res;
    
    recv = get_ts_utc(&res);
 
-   memcpy(etmp, bytes, ETH_ALEN);
-   memmove(bytes, bytes+ETH_ALEN, ETH_ALEN);
-   memcpy(bytes+ETH_ALEN, etmp, ETH_ALEN);
-
-   // swap ip src/dst
-   tmp = *(uint32_t*)(bytes+IP_O_SADDR);
-   *(uint32_t*)(bytes+IP_O_SADDR) = *(uint32_t*)(bytes+IP_O_DADDR);
-   *(uint32_t*)(bytes+IP_O_DADDR) = tmp;
+   swapmac(bytes);
+   swapip(bytes);
 
    // that's the IP part, recalculate checksum
    *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
@@ -110,14 +193,13 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    if (*(uint16_t*)(bytes+ICMP_START) == 8) { // icmp echo
      // this is simple ping, change it to response.
      *(uint32_t*)(bytes+ICMP_START) = 0;
-   } else if (*(uint16_t*)(bytes+ICMP_START) == 0x000d && 
+   } else if (*(uint16_t*)(bytes+ICMP_START) == 0x000d && plen > 90 &&
        *(uint16_t*)(bytes+ICMP_DATA+28) == 0x0100 &&
        *(uint16_t*)(bytes+ICMP_DATA+30) == 0x1096) {
       // this is a juniper RPM format. we need to put here the recv/trans stamp too
       uint32_t usec;
       memcpy(bytes+ICMP_START+12, &recv, 4);
       memcpy(bytes+ICMP_START+16, &recv, 4);
-//      memcpy(bytes+0x43, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
       clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
       usec = htonl(res.tv_nsec/1000);
       res.tv_sec = htonl(res.tv_sec);
@@ -126,6 +208,8 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
       *(uint32_t*)(bytes+ICMP_START) = 0;
       // change to response
       bytes[ICMP_START] = 0x0e;
+   } else {
+      return; // do not process
    }
    // fix icmp header
    // recalculate checksum
@@ -157,9 +241,15 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    // ensure dst ip is correct
    if (memcmp(response+IP_O_DADDR, &dest_ip, sizeof dest_ip)) return;
 
-   if (bytes[IP_O_PROTO] == 1) {
-     // it's icmp.
-     process_and_send_icmp(fd,response,plen);
+   switch(bytes[IP_O_PROTO]) {
+     case 1:
+       // it's icmp.
+       process_and_send_icmp(fd,response,plen);
+       break;
+     case 17:
+       // udp
+       process_and_send_udp(fd,response,plen);
+       break;
    }
 }
 
