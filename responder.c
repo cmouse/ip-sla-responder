@@ -57,11 +57,9 @@ uint32_t get_ts_utc(struct timespec *res) {
 
 void bin2hex(const unsigned char *data, size_t dlen) {
    size_t i;
-   printf("%08x ", 0);
    for(i=0; i < dlen; i++) {
-
-     if ((i % 8) == 0 && i > 0)
-      printf("\n%08x ", (unsigned int)i);
+     if ((i % 16) == 0 || i == 0)
+      printf("\n%04x  ", (unsigned int)i);
      printf("%02x ", data[i]);
    }
    printf("\n");
@@ -163,10 +161,24 @@ Address Resolution Protocol (reply)
     Sender IP address: 62.236.132.159 (62.236.132.159)
     Target MAC address: 88:43:e1:de:22:c0 (88:43:e1:de:22:c0)
     Target IP address: 62.236.132.158 (62.236.132.158)
+
+0000 ff ff ff ff ff ff 88 43 e1 de 22 c0 81 00 c0 cb
+0010 08 06 00 01 08 00 06 04 00 01 88 43 e1 de 22 c0
+0020 3e ec ff b3 00 00 00 00 00 00 3e ec ff b2 00 00
+0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
+0000 88 43 e1 de 22 c0 d0 d0 fd 09 34 2c 81 00 c0 cb
+0010 08 06 00 01 08 00 06 04 00 02 d0 d0 fd 09 34 2c
+0020 3e ec ff b2 00 00 00 00 00 00 3e ec ff b2 00 00
+0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+
 */
     u_char tmp[ETH_ALEN];
+    struct msghdr msg;
+    struct iovec iovec;
+
     if (*(uint16_t*)(bytes+ARP_START)!=0x0100 ||
-        *(uint16_t*)(bytes+ARP_START+2)!=ETH_P_IP ||
+        *(uint16_t*)(bytes+ARP_START+2)!=0x008 ||
         *(uint8_t*)(bytes+ARP_START+4)!=0x06 ||
         *(uint8_t*)(bytes+ARP_START+7)!=0x01 ||
         *(uint32_t*)(bytes+ARP_START+24)!=dest_ip) {
@@ -178,14 +190,28 @@ Address Resolution Protocol (reply)
     // in case it's broadcast
     memcpy(bytes+ETH_ALEN, dest_mac, ETH_ALEN);
     // move sender to target, again
-    memmove(bytes+ARP_START, bytes+ARP_START+10, 10);
+    memmove(bytes+ARP_START+18, bytes+ARP_START+8, 10);
     // fill in sender
-    memcpy(bytes+ARP_START, dest_mac, ETH_ALEN);
-    memcpy(bytes+ARP_START+ETH_ALEN, &dest_ip, 4);
-    // change opcode to reply
-    bytes[7] = 0x02;
-    // send it back (arp reply is 28 bytes)
-    send(fd, bytes, 0, 28);
+    memcpy(bytes+ARP_START+8, dest_mac, ETH_ALEN);
+    memcpy(bytes+ARP_START+8+ETH_ALEN, &dest_ip, 4);
+    bytes[ARP_START+7] = 0x02;
+
+    // clean up response
+    memset(bytes+46,0,0x40);
+
+    // we use msghdr here.
+    msg.msg_name = NULL;
+    msg.msg_namelen = 0;
+    iovec.iov_base = bytes;
+    iovec.iov_len = 0x40;
+    msg.msg_iov = &iovec;
+    msg.msg_iovlen = 1;
+    msg.msg_control = NULL;
+    msg.msg_controllen = 0;
+    msg.msg_flags = 0;
+
+    if (sendmsg(fd, &msg, 0) < 0x40) 
+      perror("send_arp");
 }
 
 
@@ -286,14 +312,17 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    size_t plen;
    clock_gettime(CLOCK_REALTIME, &res0);
 
+   //bin2hex(bytes, h->caplen);
+
    fd = *(int*)user;
    // expect vlan
 
    if (*(unsigned short*)(bytes+ETH_O_PROTO) != htons(ETH_P_8021Q)) return;   
 
-   if (*(unsigned short*)(bytes+ETH_O_PROTO+4) == htons(ETH_P_IP)) {
+   switch((*(unsigned short*)(bytes+ETH_O_PROTO+4))) {
+     case 0x0008:
        plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; // total size of entire packet
-       if (plen > 1500) return; // sorry, we are bit silly
+       if (plen > 1500) return; // accept only 1500 byte packages
        memcpy(response,bytes,plen);
 
        // ensure dst ip is correct
@@ -309,9 +338,13 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
             process_and_send_udp(fd,response,plen);
             break;
        }
-   } else if (*(unsigned short*)(bytes+ETH_O_PROTO+4) == htons(ETH_P_ARP)) {
+       break;
+     case 0x0608:
+      // ensure request size.
+      if (h->caplen < 46) return; // require 45 byte packet
       memcpy(response,bytes,h->caplen);
       process_and_send_arp(fd,response,h->caplen);
+      break;
    }
 }
 
@@ -442,19 +475,26 @@ int main(int argc, char * const argv[]) {
    sa.sll_ifindex = ifr.ifr_ifindex;
    sa.sll_protocol = htons(ETH_P_ALL);
    bind(fd, (struct sockaddr*)&sa, sizeof sa);
-
    p = pcap_create(interface, errbuf);
+   if (pcap_set_snaplen(p, 65535)) {
+     pcap_perror(p, "pcap_set_snaplen");
+     exit(1);
+   }
+   if (pcap_set_promisc(p, 1)) {
+     pcap_perror(p, "pcap_set_promisc");
+     exit(1);
+   }
+   // need to activate before setting datalink and filter
    pcap_activate(p);
    if (pcap_set_datalink(p, 1) != 0) {
      pcap_perror(p, "pcap_set_datalink");
      exit(1);
    }
-   bpf_program(p, &fp,ipbuf);
+   /*bpf_program(p, &fp,ipbuf);
    if (pcap_setfilter(p, &fp)!=0) {
      pcap_perror(p, "pcap_setfilter");
      exit(1);
-   }
-   pcap_set_snaplen(p, 65535);
+   }*/
    printf("Listening on %s (mac: %02x:%02x:%02x:%02x:%02x:%02x ip: %s)\n", interface, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], ipbuf);
 
    pcap_loop(p, 0, pak_handler, (u_char*)&fd);
