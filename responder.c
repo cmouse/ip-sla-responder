@@ -82,9 +82,8 @@ const unsigned long NTP_SCALE_FRAC = 4294967296UL;
 
 inline uint32_t get_ts_utc(struct timespec *res) {
    struct tm tm;
-   clock_gettime(CLOCK_REALTIME,res);
-   gmtime_r(&res->tv_sec, &tm);
-   return (tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec)*1000 + (res->tv_nsec/1000);
+   gmtime_r(&(res->tv_sec), &tm);
+   return (tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec)*1000 + (res->tv_nsec/1000000);
 }
 
 inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec) {
@@ -132,6 +131,8 @@ inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_
    register uint32_t sum=0;
    register size_t i;
    uint16_t pad;
+
+   pad=0;
    if ((dlen&1)==1) {
       pad=1;
       buff[dlen]=0;
@@ -142,11 +143,11 @@ inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_
    }
    for (i=0;i<4;i=i+2){
      word16 =((src_addr[i]<<8)&0xFF00)+(src_addr[i+1]&0xFF);
-     sum=sum+word16;
+     sum += (uint32_t)word16;
    }
    for (i=0;i<4;i=i+2){
      word16 =((dest_addr[i]<<8)&0xFF00)+(dest_addr[i+1]&0xFF);
-     sum=sum+word16; 
+     sum += (uint32_t)word16;
    }
    sum = sum + 17 + dlen;
    sum = (sum & 0xffff)+(sum >> 16);
@@ -218,7 +219,6 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
    struct timespec res;
    uint16_t tmp;
 
-   recv = get_ts_utc(&res);
    swapmac(bytes);
    swapip(bytes);
 
@@ -241,6 +241,8 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
           *(uint16_t*)(bytes+UDP_DATA+30) == 0x1096 && plen > 90) {
          // this is a juniper RPM format. we need to put here the recv/trans stamp too
          uint32_t usec;
+         clock_gettime(CLOCK_REALTIME, &res);
+         recv = get_ts_utc(&res);
          memcpy(bytes+UDP_START+12, &recv, 4);
          memcpy(bytes+UDP_START+16, &recv, 4);
          memcpy(bytes+UDP_START+0x1c, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
@@ -251,13 +253,13 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          memcpy(bytes+UDP_START+0x30, &usec, 4);
       }
    } else if (*(uint16_t*)(bytes+UDP_DPORT) == dest_udp_ip_sla && plen > UDP_DATA + 31) {
+      clock_gettime(CLOCK_REALTIME, &res);
       if (bytes[UDP_DATA+1] == 0x02) {
         // send out as ipsla
-        *(uint32_t*)(bytes + UDP_DATA + 8) = htonl(res.tv_sec*1000 + res.tv_nsec/1000000);
+        *(uint32_t*)(bytes + UDP_DATA + 8) = htonl(get_ts_utc(&res));
         *(uint16_t*)(bytes + UDP_DATA + 14) = *(uint16_t*)(bytes + UDP_DATA + 12);
       } else if (bytes[UDP_DATA+1] == 0x03) {
          uint32_t t2, t3;
-         clock_gettime(CLOCK_REALTIME, &res);
          // res0 first
          ts_to_ntp(&res0, &t2, &t3);
          memcpy(bytes+UDP_DATA + 12, &t2, 4);
@@ -289,13 +291,12 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
      *(uint16_t*)(bytes+UDP_CHECKSUM) = 0xffff; 
 
    send(fd, bytes, plen, 0);
-   bin2hex(bytes, plen);
 }
 
 void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    uint32_t tmp,recv;
    struct timespec res;
-   
+  
    recv = get_ts_utc(&res0);
 
    swapmac(bytes);
@@ -345,8 +346,6 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    int fd;
    size_t plen;
    clock_gettime(CLOCK_REALTIME, &res0);
-
-   //bin2hex(bytes, h->caplen);
 
    fd = *(int*)user;
    // expect vlan

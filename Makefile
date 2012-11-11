@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-W -Wall -Wno-unused -g -O0
+CFLAGS=-W -Wall -Wno-unused -g -O2 -mtune=native -march=native 
 LD=gcc
 LDFLAGS=-g
 BINARY=responder
