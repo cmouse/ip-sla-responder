@@ -441,9 +441,10 @@ int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char 
          printf("Usage: responder -h -v level -I if -m mac -i ip\r\n");
          printf("\t-h      \t Help message\r\n");
          printf("\t-i ip   \t IP address to listen on (defaults to 192.168.0.1) \r\n");
-         printf("\t-m mac  \t MAC address for IP (uses interface if empty)\r\n");
-         printf("\t-I if   \t Interface to listen on (defaults to whatever pcap gives)\r\n");
+         printf("\t-m mac  \t MAC address for IP (uses interface's if empty)\r\n");
+         printf("\t-I if   \t Interface to listen on (defaults to first non-loopback interface)\r\n");
          printf("\t-l level\t Message level (0-3, defaults to 0)\r\n");
+         printf("\t-p port \t UDP port for Cisco IP SLA (default 50505)\r\n");
          printf("\n");
          return EXIT_FAILURE;
      } 
