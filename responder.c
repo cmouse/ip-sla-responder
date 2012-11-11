@@ -46,13 +46,22 @@
 
 struct timespec res0;
 static uint32_t dest_ip;
+static uint16_t dest_udp_ip_sla;
 static u_char dest_mac[ETH_ALEN];
 
-uint32_t get_ts_utc(struct timespec *res) {
+const unsigned long NTP_EPOCH = 2208988800UL;
+const unsigned long NTP_SCALE_FRAC = 4294967296UL;
+
+inline uint32_t get_ts_utc(struct timespec *res) {
    struct tm tm;
    clock_gettime(CLOCK_REALTIME,res);
    gmtime_r(&res->tv_sec, &tm);
    return (tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec)*1000 + (res->tv_nsec/1000);
+}
+
+inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec) {
+    *ntp_sec = htonl(res->tv_sec + NTP_EPOCH);
+    *ntp_fsec = htonl(((NTP_SCALE_FRAC * (res->tv_nsec/1000)) / 1000000UL));
 }
 
 void bin2hex(const unsigned char *data, size_t dlen) {
@@ -134,45 +143,6 @@ inline void swapip(u_char *bytes) {
 } 
 
 void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
-/*
-0000  d0 d0 fd 09 34 2c 88 43 e1 de 22 c0 81 00 c0 c9   ....4,.C..".....
-0010  08 06 00 01 08 00 06 04 00 01 88 43 e1 de 22 c0   ...........C..".
-0020  3e ec 84 9e d0 d0 fd 09 34 2c 3e ec 84 9f 00 00   >.......4,>.....
-0030  00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00   ................
-Address Resolution Protocol (request)
-    Hardware type: Ethernet (1)
-    Protocol type: IP (0x0800)
-    Hardware size: 6
-    Protocol size: 4
-    Opcode: request (1)
-    [Is gratuitous: False]
-    Sender MAC address: 88:43:e1:de:22:c0 (88:43:e1:de:22:c0)
-    Sender IP address: 62.236.132.158 (62.236.132.158)
-    Target MAC address: d0:d0:fd:09:34:2c (d0:d0:fd:09:34:2c)
-    Target IP address: 62.236.132.159 (62.236.132.159)
-Address Resolution Protocol (reply)
-    Hardware type: Ethernet (1)
-    Protocol type: IP (0x0800)
-    Hardware size: 6
-    Protocol size: 4
-    Opcode: reply (2)
-    [Is gratuitous: False]
-    Sender MAC address: d0:d0:fd:09:34:2c (d0:d0:fd:09:34:2c)
-    Sender IP address: 62.236.132.159 (62.236.132.159)
-    Target MAC address: 88:43:e1:de:22:c0 (88:43:e1:de:22:c0)
-    Target IP address: 62.236.132.158 (62.236.132.158)
-
-0000 ff ff ff ff ff ff 88 43 e1 de 22 c0 81 00 c0 cb
-0010 08 06 00 01 08 00 06 04 00 01 88 43 e1 de 22 c0
-0020 3e ec ff b3 00 00 00 00 00 00 3e ec ff b2 00 00
-0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-
-0000 88 43 e1 de 22 c0 d0 d0 fd 09 34 2c 81 00 c0 cb
-0010 08 06 00 01 08 00 06 04 00 02 d0 d0 fd 09 34 2c
-0020 3e ec ff b2 00 00 00 00 00 00 3e ec ff b2 00 00
-0030 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
-
-*/
     u_char tmp[ETH_ALEN];
     struct msghdr msg;
     struct iovec iovec;
@@ -218,23 +188,29 @@ Address Resolution Protocol (reply)
 void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
    uint32_t recv;
    struct timespec res;
-   
+   uint16_t tmp;
+
    recv = get_ts_utc(&res);
    swapmac(bytes);
    swapip(bytes);
 
-   // that's the IP part, recalculate checksum
-   *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
-   ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
-
-   if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(7)) {
-      // just send it back with swapped ports
-      uint16_t tmp = *(uint16_t*)(bytes+UDP_DPORT);
-      *(uint16_t*)(bytes+UDP_DPORT) = *(uint16_t*)(bytes+UDP_SPORT);
-      *(uint16_t*)(bytes+UDP_SPORT) = tmp;
+   if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(1967) && plen > 23) {
+      // this is probably cisco ipsla.
+      if (*(uint8_t*)(bytes+UDP_DATA) == 0x01 &&
+          *(uint32_t*)(bytes+UDP_DATA+16) == dest_ip &&
+          *(uint16_t*)(bytes+UDP_DATA+20) == dest_udp_ip_sla) {
+         *(uint16_t*)(bytes+IP_O_TOT_LEN) = htons(20 + 8 + 24);
+         *(uint16_t*)(bytes+UDP_LEN) = htons(8 + 24);
+         bytes[UDP_DATA+3] = 0x08;
+         memset(bytes+UDP_DATA+4, 0, 8); 
+         plen = UDP_DATA+24;
+      } else {
+         return; // ignore this
+      }
+   } else if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(7)) {
       // wonder if this is RPM
       if (*(uint16_t*)(bytes+UDP_DATA+28) == 0x0100 &&
-       *(uint16_t*)(bytes+UDP_DATA+30) == 0x1096 && plen > 90) {
+          *(uint16_t*)(bytes+UDP_DATA+30) == 0x1096 && plen > 90) {
          // this is a juniper RPM format. we need to put here the recv/trans stamp too
          uint32_t usec;
          memcpy(bytes+UDP_START+12, &recv, 4);
@@ -246,16 +222,46 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          memcpy(bytes+UDP_START+0x2c, &res.tv_sec, 4);
          memcpy(bytes+UDP_START+0x30, &usec, 4);
       }
+   } else if (*(uint16_t*)(bytes+UDP_DPORT) == dest_udp_ip_sla && plen > UDP_DATA + 31) {
+      if (bytes[UDP_DATA+1] == 0x02) {
+        // send out as ipsla
+        *(uint32_t*)(bytes + UDP_DATA + 8) = htonl(res.tv_sec*1000 + res.tv_nsec/1000000);
+        *(uint16_t*)(bytes + UDP_DATA + 14) = *(uint16_t*)(bytes + UDP_DATA + 12);
+      } else if (bytes[UDP_DATA+1] == 0x03) {
+         uint32_t t2, t3;
+         clock_gettime(CLOCK_REALTIME, &res);
+         // res0 first
+         ts_to_ntp(&res0, &t2, &t3);
+         memcpy(bytes+UDP_DATA + 12, &t2, 4);
+         memcpy(bytes+UDP_DATA + 16, &t3, 4);
+         ts_to_ntp(&res, &t2, &t3);
+         memcpy(bytes+UDP_DATA + 20, &t2, 4);
+         memcpy(bytes+UDP_DATA + 24, &t3, 4);
+         memmove(bytes+UDP_DATA + 0x36, bytes+UDP_DATA + 0x34, 2);
+         memcpy(bytes+0x52, "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00", 11);
+      } else {
+         return; 
+      }
    } else {
       return; // do not process
    }
+
+   tmp = *(uint16_t*)(bytes+UDP_DPORT);
+   *(uint16_t*)(bytes+UDP_DPORT) = *(uint16_t*)(bytes+UDP_SPORT);
+   *(uint16_t*)(bytes+UDP_SPORT) = tmp;
+
+   // that's the IP part, recalculate checksum
+   *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
+   ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
 
    *(uint16_t*)(bytes+UDP_CHECKSUM) = 0;
    tcp_checksum(bytes+IP_O_SADDR, bytes+IP_O_DADDR, bytes+UDP_START, ntohs(*(uint16_t*)(bytes+UDP_LEN)), (uint16_t*)(bytes+UDP_CHECKSUM));
    // as per spec
    if (*(uint16_t*)(bytes+UDP_CHECKSUM) == 0) 
-     *(uint16_t*)(bytes+UDP_CHECKSUM) = 0xffff;
+     *(uint16_t*)(bytes+UDP_CHECKSUM) = 0xffff; 
+
    send(fd, bytes, plen, 0);
+   bin2hex(bytes, plen);
 }
 
 void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
@@ -359,13 +365,20 @@ void bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
   } 
 }
 
-int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, char *interface, size_t iflen) 
+int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, uint16_t *port_udp_ip_sla, char *interface, size_t iflen) 
 {
   char opt;
-  while((opt = getopt(argc, argv, "I:i:m:hv:")) != -1) {
+  while((opt = getopt(argc, argv, "p:I:i:m:hv:")) != -1) {
      switch(opt) {
        case 'I':
          strncpy(interface, optarg, iflen);
+         break;
+       case 'p':
+         *port_udp_ip_sla = htons((uint16_t)atoi(optarg));
+         if (*port_udp_ip_sla == 0) {
+           fprintf(stderr, "Invalid UDP port for IP-SLA supplied: %s\r\n", optarg);
+           return EXIT_FAILURE;
+         }
          break;
        case 'i':
          if (inet_pton(AF_INET, optarg, ip) != 1) {
@@ -426,8 +439,8 @@ int main(int argc, char * const argv[]) {
    memset(dest_mac, 0, sizeof dest_mac);
    memset(interface, 0, sizeof interface);
    debug = 0;
-
-   if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debug, interface, IFNAMSIZ) != EXIT_SUCCESS) {
+   dest_udp_ip_sla = htons(50505);
+   if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debug, &dest_udp_ip_sla, interface, IFNAMSIZ) != EXIT_SUCCESS) {
       return EXIT_FAILURE;
    }
 

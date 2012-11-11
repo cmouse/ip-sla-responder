@@ -11,6 +11,9 @@ LIBS=-lrt -lpcap
 $(BINARY): $(OBJECTS)
 	$(LD) $(LDFLAGS) -o $(BINARY) $(OBJECTS) $(LIBS)
 
+test: test.o
+	$(LD) $(LDFLAGS) -o $@ $< $(LIBS)
+
 .c.o:
 	$(CC) $(CFLAGS) -c -o $@ $<
 
