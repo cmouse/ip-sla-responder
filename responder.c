@@ -408,7 +408,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    fd = *(int*)user;
 
    // require vlan
-   if (*(unsigned short*)(bytes+ETH_O_PROTO) != htons(ETH_P_8021Q)) return;   
+   if (*(unsigned short*)(bytes+ETH_O_PROTO) != 0x0081) return;   
 
    // choose protocol 
    switch((*(unsigned short*)(bytes+ETH_O_PROTO+0x4))) {
