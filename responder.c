@@ -70,6 +70,9 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define ARP_START ETH_HLEN+4
 
+#define DEFAULT_IP_ADDR "192.168.0.2"
+#define DEFAULT_IPSLA_PORT 50505
+
 struct timespec res0;
 static uint32_t dest_ip;
 static uint16_t dest_udp_ip_sla;
@@ -557,13 +560,12 @@ int main(int argc, char * const argv[]) {
    char ipbuf[100];
 
    // default IP address
-   // FIXME: Change to correct default
-   inet_pton(AF_INET, "62.236.255.178", &dest_ip);
+   inet_pton(AF_INET, DEFAULT_IP_ADDR, &dest_ip);
    // sanitize and default
    memset(dest_mac, 0, sizeof dest_mac);
    memset(interface, 0, sizeof interface);
    debuglevel = 0;
-   dest_udp_ip_sla = htons(50505);
+   dest_udp_ip_sla = htons(DEFAULT_IPSLA_PORT);
    // parse command line args
    if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debuglevel, &dest_udp_ip_sla, interface, IFNAMSIZ) != EXIT_SUCCESS) {
       return EXIT_FAILURE;
