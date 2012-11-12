@@ -74,6 +74,7 @@ struct timespec res0;
 static uint32_t dest_ip;
 static uint16_t dest_udp_ip_sla;
 static u_char dest_mac[ETH_ALEN];
+static int debuglevel;
 
 const unsigned long NTP_EPOCH = 2208988800UL;
 const unsigned long NTP_SCALE_FRAC = 4294967296UL;
@@ -214,8 +215,13 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     msg.msg_flags = 0; */
 
     // we need to send 64b to get FCS right
-    if (send(fd, bytes, plen, 0) < 64) 
-      perror("send_arp");
+    if (send(fd, bytes, plen, 0) < 64) {
+        perror("send_arp");
+    }
+    if (debuglevel) {
+      printf("Sent %lu arp bytes\n", plen);
+      bin2hex(bytes, plen);
+    }
 }
 
 /**
@@ -323,7 +329,13 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
      *(uint16_t*)(bytes+UDP_CHECKSUM) = 0xffff; 
 
    // ship it out
-   send(fd, bytes, plen, 0);
+   if (send(fd, bytes, plen, 0) < (ssize_t)plen) {
+     perror("send_udp");
+   }
+   if (debuglevel) {
+      printf("Sent %lu udp bytes\n", plen);
+      bin2hex(bytes, plen);
+   }
 }
 
 /**
@@ -375,7 +387,13 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    // recalculate checksum
    ip_checksum(bytes+ICMP_START, plen - 38, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
-   send(fd, bytes, plen, 0);
+   if (send(fd, bytes, plen, 0) < (ssize_t)plen) {
+      perror("send_icmp");
+   }
+   if (debuglevel) {
+      printf("Sent %lu icmp bytes\n", plen);
+      bin2hex(bytes, plen);
+   }
 }
 
 /**
@@ -398,6 +416,11 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 
    // file descriptor for output
    fd = *(int*)user;
+
+   if (debuglevel) {
+     printf("Received %d bytes\n", h->caplen);
+     bin2hex(bytes, h->caplen);
+   }
 
    // require vlan
    if (*(unsigned short*)(bytes+ETH_O_PROTO) != 0x0081) return;   
@@ -509,7 +532,7 @@ int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char 
          printf("\t-i ip   \t IP address to listen on (defaults to 192.168.0.1) \r\n");
          printf("\t-m mac  \t MAC address for IP (uses interface's if empty)\r\n");
          printf("\t-I if   \t Interface to listen on (defaults to first non-loopback interface)\r\n");
-         printf("\t-l level\t Message level (0-3, defaults to 0)\r\n");
+         printf("\t-l level\t Message level (0-1, defaults to 0)\r\n");
          printf("\t-p port \t UDP port for Cisco IP SLA (default 50505)\r\n");
          printf("\n");
          return EXIT_FAILURE;
@@ -532,7 +555,6 @@ int main(int argc, char * const argv[]) {
    char errbuf[PCAP_ERRBUF_SIZE];
    char interface[IFNAMSIZ];
    char ipbuf[100];
-   int debug;
 
    // default IP address
    // FIXME: Change to correct default
@@ -540,10 +562,10 @@ int main(int argc, char * const argv[]) {
    // sanitize and default
    memset(dest_mac, 0, sizeof dest_mac);
    memset(interface, 0, sizeof interface);
-   debug = 0;
+   debuglevel = 0;
    dest_udp_ip_sla = htons(50505);
    // parse command line args
-   if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debug, &dest_udp_ip_sla, interface, IFNAMSIZ) != EXIT_SUCCESS) {
+   if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debuglevel, &dest_udp_ip_sla, interface, IFNAMSIZ) != EXIT_SUCCESS) {
       return EXIT_FAILURE;
    }
  
