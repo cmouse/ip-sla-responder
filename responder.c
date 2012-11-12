@@ -132,11 +132,9 @@ inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_
    register size_t i;
    uint16_t pad;
 
-   pad=0;
-   if ((dlen&1)==1) {
-      pad=1;
-      buff[dlen]=0;
-   }
+   pad=dlen&1;
+   buff[dlen]=0; // this will work in this code...
+
    for (i=0;i<dlen+pad;i=i+2){
      word16 =((buff[i]<<8)&0xff00)+(buff[i+1]&0xff);
      sum += (uint32_t)word16;
@@ -171,17 +169,24 @@ inline void swapip(u_char *bytes) {
    *(uint32_t*)(bytes+IP_O_DADDR) = tmp;
 } 
 
+/**
+ * process_and_send_arp(int fd, u_char *bytes, size_t plen)
+ * 
+ * responsible for sending ARP respondes for our virtual IP.
+ *
+ * @param fd - File descriptor to send response to
+ * @param bytes - Received bytes and working area
+ * @param plen - Length of received packet
+ */
 void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     u_char tmp[ETH_ALEN];
-    struct msghdr msg;
-    struct iovec iovec;
 
-    if (*(uint16_t*)(bytes+ARP_START)!=0x0100 ||
-        *(uint16_t*)(bytes+ARP_START+2)!=0x008 ||
-        *(uint8_t*)(bytes+ARP_START+4)!=0x06 ||
-        *(uint8_t*)(bytes+ARP_START+7)!=0x01 ||
-        *(uint32_t*)(bytes+ARP_START+24)!=dest_ip) {
-      return; // ignore
+    if (*(uint16_t*)(bytes+ARP_START)!=0x0100 ||     // hwtype ethernet
+        *(uint16_t*)(bytes+ARP_START+2)!=0x008 ||    // ethetype IP
+        *(uint8_t*)(bytes+ARP_START+4)!=0x06 ||      // hwlen 6
+        *(uint8_t*)(bytes+ARP_START+7)!=0x01 ||      // request
+        *(uint32_t*)(bytes+ARP_START+24)!=dest_ip) { // our IP
+      return; // ignore, not for us. 
     }
 
     // move sender to target
@@ -189,16 +194,17 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     // in case it's broadcast
     memcpy(bytes+ETH_ALEN, dest_mac, ETH_ALEN);
     // move sender to target, again
-    memmove(bytes+ARP_START+18, bytes+ARP_START+8, 10);
+    memmove(bytes+ARP_START+0x12, bytes+ARP_START+0x8, ETH_ALEN+4); 
     // fill in sender
-    memcpy(bytes+ARP_START+8, dest_mac, ETH_ALEN);
-    memcpy(bytes+ARP_START+8+ETH_ALEN, &dest_ip, 4);
-    bytes[ARP_START+7] = 0x02;
+    memcpy(bytes+ARP_START+0x8, dest_mac, ETH_ALEN);
+    memcpy(bytes+ARP_START+0x8+ETH_ALEN, &dest_ip, 4);
+    // make this response
+    bytes[ARP_START+0x7] = 0x02;
 
     // clean up response
-    memset(bytes+46,0,0x40);
+    memset(bytes+0x2e,0,18);
 
-    // we use msghdr here.
+/*    // we use msghdr here.
     msg.msg_name = NULL;
     msg.msg_namelen = 0;
     iovec.iov_base = bytes;
@@ -207,67 +213,96 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     msg.msg_iovlen = 1;
     msg.msg_control = NULL;
     msg.msg_controllen = 0;
-    msg.msg_flags = 0;
+    msg.msg_flags = 0; */
 
-    if (sendmsg(fd, &msg, 0) < 0x40) 
+    // we need to send 64b to get FCS right
+    if (send(fd, bytes, plen, 0) < 64) 
       perror("send_arp");
 }
 
-
+/**
+ * process_and_send_arp(int fd, u_char *bytes, size_t plen)
+ *
+ * responsible for sending IP-SLA and RPM responses for UDP
+ *
+ * @param fd - File descriptor to send response to
+ * @param bytes - Received bytes and working area
+ * @param plen - Length of received packet
+ */
 void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
+   // received time stamp
    uint32_t recv;
+   // timespec for various purposes
    struct timespec res;
+   // for swapping sport<->dport
    uint16_t tmp;
 
    swapmac(bytes);
    swapip(bytes);
 
-   if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(1967) && plen > 23) {
+   // check for cisco ipsla handshake packet
+   if (*(uint16_t*)(bytes+UDP_DPORT) == 0xaf07  && plen > 23) { // port 1967
       // this is probably cisco ipsla.
-      if (*(uint8_t*)(bytes+UDP_DATA) == 0x01 &&
-          *(uint32_t*)(bytes+UDP_DATA+16) == dest_ip &&
-          *(uint16_t*)(bytes+UDP_DATA+20) == dest_udp_ip_sla) {
-         *(uint16_t*)(bytes+IP_O_TOT_LEN) = htons(20 + 8 + 24);
-         *(uint16_t*)(bytes+UDP_LEN) = htons(8 + 24);
-         bytes[UDP_DATA+3] = 0x08;
-         memset(bytes+UDP_DATA+4, 0, 8); 
+      if (*(uint8_t*)(bytes+UDP_DATA) == 0x01 &&                // version = 1
+          *(uint32_t*)(bytes+UDP_DATA+0x10) == dest_ip &&         // target ip = our IP 
+          *(uint16_t*)(bytes+UDP_DATA+0x14) == dest_udp_ip_sla) { // target port = our preselected port
+         // truncate packet
+         *(uint16_t*)(bytes+IP_O_TOT_LEN) = 0x3400; // htons(52) 
+         *(uint16_t*)(bytes+UDP_LEN) = 0x2000; //  htons(32)
          plen = UDP_DATA+24;
+
+         // change to something 8 zeros
+         bytes[UDP_DATA+0x3] = 0x08;
+         memset(bytes+UDP_DATA+0x4, 0, 8); 
       } else {
          return; // ignore this
       }
+   // juniper RPM uses port 7 for udp-ping
    } else if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(7)) {
-      // wonder if this is RPM
-      if (*(uint16_t*)(bytes+UDP_DATA+28) == 0x0100 &&
-          *(uint16_t*)(bytes+UDP_DATA+30) == 0x1096 && plen > 90) {
-         // this is a juniper RPM format. we need to put here the recv/trans stamp too
+      if (*(uint16_t*)(bytes+UDP_DATA+0x1c) == 0x0100 &&   // rpm signature
+          *(uint16_t*)(bytes+UDP_DATA+0x1e) == 0x1096 && plen > 90) {
          uint32_t usec;
+         // get time
          clock_gettime(CLOCK_REALTIME, &res);
+         // convert into ms from midnight
          recv = get_ts_utc(&res);
-         memcpy(bytes+UDP_START+12, &recv, 4);
-         memcpy(bytes+UDP_START+16, &recv, 4);
-         memcpy(bytes+UDP_START+0x1c, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
-         clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
+         // put it in place, twice...
+         memcpy(bytes+UDP_DATA+0x04, &recv, 4);
+         memcpy(bytes+UDP_DATA+0x8, &recv, 4);
+         // fill in little magic (dunno what this is)
+         memcpy(bytes+UDP_DATA+0x14, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
+         // juniper uses uptime as epoch, we use something similar
+         // contrary to what you think, it doesn't have to agree with them
+         clock_gettime(CLOCK_MONOTONIC, &res); 
          usec = htonl(res.tv_nsec/1000);
          res.tv_sec = htonl(res.tv_sec);
-         memcpy(bytes+UDP_START+0x2c, &res.tv_sec, 4);
-         memcpy(bytes+UDP_START+0x30, &usec, 4);
+         // put in us accurate "uptime"
+         memcpy(bytes+UDP_DATA+0x24, &res.tv_sec, 4);
+         memcpy(bytes+UDP_DATA+0x28, &usec, 4);
       }
+   // cisco IP SLA again.
    } else if (*(uint16_t*)(bytes+UDP_DPORT) == dest_udp_ip_sla && plen > UDP_DATA + 31) {
       clock_gettime(CLOCK_REALTIME, &res);
-      if (bytes[UDP_DATA+1] == 0x02) {
-        // send out as ipsla
-        *(uint32_t*)(bytes + UDP_DATA + 8) = htonl(get_ts_utc(&res));
-        *(uint16_t*)(bytes + UDP_DATA + 14) = *(uint16_t*)(bytes + UDP_DATA + 12);
-      } else if (bytes[UDP_DATA+1] == 0x03) {
+      if (bytes[UDP_DATA+0x1] == 0x02) {
+        // fill in ms accurate time from midnight, aka ICMP timestamp
+        *(uint32_t*)(bytes + UDP_DATA + 0x8) = htonl(get_ts_utc(&res));
+        // copy packet sequence number
+        *(uint16_t*)(bytes + UDP_DATA + 0x0e) = *(uint16_t*)(bytes + UDP_DATA + 0x0c);
+      } else if (bytes[UDP_DATA+0x1] == 0x03) {
          uint32_t t2, t3;
-         // res0 first
+         // generate received ntp timestamp
          ts_to_ntp(&res0, &t2, &t3);
-         memcpy(bytes+UDP_DATA + 12, &t2, 4);
-         memcpy(bytes+UDP_DATA + 16, &t3, 4);
+         // put it in place
+         memcpy(bytes+UDP_DATA + 0x0c, &t2, 4);
+         memcpy(bytes+UDP_DATA + 0x10, &t3, 4);
+         // generate about-to-send ntp timestamp
          ts_to_ntp(&res, &t2, &t3);
-         memcpy(bytes+UDP_DATA + 20, &t2, 4);
-         memcpy(bytes+UDP_DATA + 24, &t3, 4);
+         // put it in place
+         memcpy(bytes+UDP_DATA + 0x14, &t2, 4);
+         memcpy(bytes+UDP_DATA + 0x18, &t3, 4);
+         // copy packet sequence number
          memmove(bytes+UDP_DATA + 0x36, bytes+UDP_DATA + 0x34, 2);
+         // fill out some cisco specific cruft
          memcpy(bytes+0x52, "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00", 11);
       } else {
          return; 
@@ -276,23 +311,34 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
       return; // do not process
    }
 
+   // swap ports round
    tmp = *(uint16_t*)(bytes+UDP_DPORT);
    *(uint16_t*)(bytes+UDP_DPORT) = *(uint16_t*)(bytes+UDP_SPORT);
    *(uint16_t*)(bytes+UDP_SPORT) = tmp;
 
-   // that's the IP part, recalculate checksum
+   // recalculate IP checksum
    *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
    ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
 
+   // recalculate UDP checksum (no offloading for us)
    *(uint16_t*)(bytes+UDP_CHECKSUM) = 0;
    tcp_checksum(bytes+IP_O_SADDR, bytes+IP_O_DADDR, bytes+UDP_START, ntohs(*(uint16_t*)(bytes+UDP_LEN)), (uint16_t*)(bytes+UDP_CHECKSUM));
-   // as per spec
    if (*(uint16_t*)(bytes+UDP_CHECKSUM) == 0) 
      *(uint16_t*)(bytes+UDP_CHECKSUM) = 0xffff; 
 
+   // ship it out
    send(fd, bytes, plen, 0);
 }
 
+/**
+ * process_and_send_arp(int fd, u_char *bytes, size_t plen)
+ *
+ * responsible for sending RPM responses via ICMP
+ *
+ * @param fd - File descriptor to send response to
+ * @param bytes - Received bytes and working area
+ * @param plen - Length of received packet
+ */
 void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    uint32_t tmp,recv;
    struct timespec res;
@@ -315,16 +361,20 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
        *(uint16_t*)(bytes+ICMP_DATA+30) == 0x1096) {
       // this is a juniper RPM format. we need to put here the recv/trans stamp too
       uint32_t usec,sent;
-      memcpy(bytes+ICMP_START+12, &recv, 4);
-      clock_gettime(CLOCK_MONOTONIC, &res); // juniper uses silly epoch, so can I
+      // fill in received timestamp
+      memcpy(bytes+ICMP_DATA+0x04, &recv, 4);
+      // juniper uses uptime as epoch, we use something similar
+      // contrary to what you think, it doesn't have to agree with them
+      clock_gettime(CLOCK_MONOTONIC, &res); 
       usec = htonl(res.tv_nsec/1000);
       res.tv_sec = htonl(res.tv_sec);
-      memcpy(bytes+ICMP_START+0x2c, &res.tv_sec, 4);
-      memcpy(bytes+ICMP_START+0x30, &usec, 4);
+      // put it in place
+      memcpy(bytes+ICMP_DATA+0x24, &res.tv_sec, 4);
+      memcpy(bytes+ICMP_DATA+0x28, &usec, 4);
       clock_gettime(CLOCK_REALTIME, &res);
-      // just for the sake of appearances
+      // just for the sake of appearances, fill in about-to-send ts
       sent = get_ts_utc(&res);
-      memcpy(bytes+ICMP_START+16, &sent, 4);
+      memcpy(bytes+ICMP_DATA+0x0e, &sent, 4);
       *(uint32_t*)(bytes+ICMP_START) = 0;
       // change to response
       bytes[ICMP_START] = 0x0e;
@@ -333,45 +383,60 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    }
    // fix icmp header
    // recalculate checksum
-   ip_checksum(bytes+ICMP_START, plen - ETH_HLEN - 4 - 20, (uint16_t*)(bytes+ICMP_START+2));
+   ip_checksum(bytes+ICMP_START, plen - 38, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
    send(fd, bytes, plen, 0);
-//   clock_gettime(CLOCK_REALTIME, &res);
-//   printf("%lu s %lu ns\n", res.tv_sec - res0.tv_sec, res.tv_nsec - res0.tv_nsec);   
 }
 
+/**
+ * pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
+ * 
+ * handles pcap packets and dispatches them into handlers
+ *
+ * @param user - opaque data (fd in this case) 
+ * @param h - pcap header
+ * @param bytes - received bytes
+ */
 void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 {
    u_char response[1500];
    int fd;
    size_t plen;
+
+   // received timestamp
    clock_gettime(CLOCK_REALTIME, &res0);
 
+   // file descriptor for output
    fd = *(int*)user;
-   // expect vlan
 
+   // require vlan
    if (*(unsigned short*)(bytes+ETH_O_PROTO) != htons(ETH_P_8021Q)) return;   
 
-   switch((*(unsigned short*)(bytes+ETH_O_PROTO+4))) {
+   // choose protocol 
+   switch((*(unsigned short*)(bytes+ETH_O_PROTO+0x4))) {
      case 0x0008:
-       plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; // total size of entire packet
+       // total size of entire packet including everything
+       plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; 
+
        if (plen > 1500) return; // accept only 1500 byte packages
        memcpy(response,bytes,plen);
 
        // ensure dst ip is correct
        if (memcmp(response+IP_O_DADDR, &dest_ip, sizeof dest_ip)) return;
 
+       // choose protocol
        switch(bytes[IP_O_PROTO]) {
-         case 1:
+         case 0x1:
             // it's icmp.
             process_and_send_icmp(fd,response,plen);
             break;
-          case 17:
+          case 0x11:
             // udp
             process_and_send_udp(fd,response,plen);
             break;
        }
        break;
+     // ARP protocol
      case 0x0608:
       // ensure request size.
       if (h->caplen < 46) return; // require 45 byte packet
@@ -381,6 +446,16 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    }
 }
 
+/**
+ * bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
+ *
+ * provides bpf filter.
+ * FIXME: Does not work w/o vlan support in kernel
+ *
+ * @param p - PCAP structure
+ * @param fp - bpf_program structure
+ * @param ip - our IP address
+ */
 void bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
 {
   char errbuf[PCAP_ERRBUF_SIZE];
@@ -392,14 +467,33 @@ void bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
   } 
 }
 
-int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, uint16_t *port_udp_ip_sla, char *interface, size_t iflen) 
-{
+/**
+ * getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, 
+ * uint16_t *port_udp_ip_sla, char *interface, size_t iflen)
+ *
+ * handles command line parameters.
+ *
+ * @param argc - n. of arguments given
+ * @param aggv - actual arguments
+ * @param ip - pointer to IPv4 address storage
+ * @param mac - pointer to MAC storage
+ * @param verbose - pointer to store debug level
+ * @param port_udp_ip_sla - pointer to store IP SLA port number
+ * @param interface - pointer to store interface name
+ * @param iflen - size of interface name storage
+ *
+ * @returns 0 on success, non-zero on failure
+ */
+int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, 
+                     uint16_t *port_udp_ip_sla, char *interface, size_t iflen) {
   char opt;
   while((opt = getopt(argc, argv, "p:I:i:m:hv:")) != -1) {
      switch(opt) {
+       // interface
        case 'I':
          strncpy(interface, optarg, iflen);
          break;
+       // ip sla port
        case 'p':
          *port_udp_ip_sla = htons((uint16_t)atoi(optarg));
          if (*port_udp_ip_sla == 0) {
@@ -407,12 +501,14 @@ int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char 
            return EXIT_FAILURE;
          }
          break;
+       // ip address
        case 'i':
          if (inet_pton(AF_INET, optarg, ip) != 1) {
            fprintf(stderr, "Invalid IP address %s supplied\r\n", optarg);
            return EXIT_FAILURE;
          }
          break;
+       // mac address
        case 'm': {
          /* convert by splitting, MAC must be ETH_ALEN long */
          char *ptr = optarg;
@@ -434,6 +530,7 @@ int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char 
          }  
          break;
        }
+       //debug level
        case 'v':
          *verbose = atoi(optarg);
          break;
@@ -452,6 +549,11 @@ int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char 
   return EXIT_SUCCESS;
 }
 
+/**
+ * main(int argc, char * const argv[])
+ *
+ * program entry point
+ */
 int main(int argc, char * const argv[]) {
    int fd,n,valid_mac;
    struct ifreq ifr;
@@ -463,15 +565,21 @@ int main(int argc, char * const argv[]) {
    char interface[IFNAMSIZ];
    char ipbuf[100];
    int debug;
+
+   // default IP address
+   // FIXME: Change to correct default
    inet_pton(AF_INET, "62.236.255.178", &dest_ip);
+   // sanitize and default
    memset(dest_mac, 0, sizeof dest_mac);
    memset(interface, 0, sizeof interface);
    debug = 0;
    dest_udp_ip_sla = htons(50505);
+   // parse command line args
    if (getopt_responder(argc, argv, &dest_ip, dest_mac, &debug, &dest_udp_ip_sla, interface, IFNAMSIZ) != EXIT_SUCCESS) {
       return EXIT_FAILURE;
    }
-
+ 
+   // select first non-loopback if here
    if (strlen(interface) == 0) {
      pcap_if_t *alldevsp, *devptr;
      if (pcap_findalldevs(&alldevsp, errbuf)) {
@@ -491,31 +599,39 @@ int main(int argc, char * const argv[]) {
      pcap_freealldevs(alldevsp);
    }
 
+   // create raw socket
    fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
  
-   // do we have a valid mac?
+   // check for valid mac
    for(n = 0; n < ETH_ALEN; n++) {
      valid_mac = dest_mac[n];
      if (valid_mac > 0) break;
    }
 
    if (valid_mac == 0) { 
-     // need mac
+     // need mac from our interface
      memset(&ifr,0,sizeof ifr);
      snprintf(ifr.ifr_name, IFNAMSIZ, interface);
      ioctl(fd, SIOCGIFHWADDR, &ifr);
      memcpy(dest_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
    }
 
+   // parse IP address into uint32_t
    inet_ntop(AF_INET, &dest_ip, ipbuf, sizeof ipbuf);
+
+   // get interface index for binding
    memset(&ifr,0,sizeof ifr);
    snprintf(ifr.ifr_name, IFNAMSIZ, interface);
    ioctl(fd, SIOCGIFINDEX, &ifr);
    memset(&sa,0,sizeof sa);
+
+   // bind our packet if to interface
    sa.sll_family = AF_PACKET;
    sa.sll_ifindex = ifr.ifr_ifindex;
    sa.sll_protocol = htons(ETH_P_ALL);
    bind(fd, (struct sockaddr*)&sa, sizeof sa);
+
+   // initialize pcap
    p = pcap_create(interface, errbuf);
    if (pcap_set_snaplen(p, 65535)) {
      pcap_perror(p, "pcap_set_snaplen");
@@ -538,6 +654,7 @@ int main(int argc, char * const argv[]) {
    }*/
    printf("Listening on %s (mac: %02x:%02x:%02x:%02x:%02x:%02x ip: %s)\n", interface, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], ipbuf);
 
+   // start doing hard work
    pcap_loop(p, 0, pak_handler, (u_char*)&fd);
    pcap_close(p);
 
