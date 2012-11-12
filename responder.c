@@ -29,7 +29,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/socket.h>
-#include <net/ethernet.h> /* the L2 protocols */
+#include <net/ethernet.h> 
 #include <arpa/inet.h>
 #include <unistd.h>
 #include <string.h>
@@ -40,8 +40,6 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <netinet/ip_icmp.h>
 #include <netpacket/packet.h>
 #include <time.h>
-
-#define PCAP_FILTER_OWN_AND_ICMP_OR_UDP "arp or (dst host %s and (udp or icmp))"
 
 #define ETH_O_DEST 0
 #define ETH_O_SOURCE 6
@@ -447,27 +445,6 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 }
 
 /**
- * bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
- *
- * provides bpf filter.
- * FIXME: Does not work w/o vlan support in kernel
- *
- * @param p - PCAP structure
- * @param fp - bpf_program structure
- * @param ip - our IP address
- */
-void bpf_program(pcap_t *p, struct bpf_program *fp, char *ip)
-{
-  char errbuf[PCAP_ERRBUF_SIZE];
-  char program[4096];
-  snprintf(program, sizeof program, PCAP_FILTER_OWN_AND_ICMP_OR_UDP, ip);
-  if (pcap_compile(p, fp, program, 1, PCAP_NETMASK_UNKNOWN) != 0) {
-    pcap_perror(p, "pcap_compile");
-    exit(1);
-  } 
-}
-
-/**
  * getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, 
  * uint16_t *port_udp_ip_sla, char *interface, size_t iflen)
  *
@@ -558,7 +535,6 @@ int main(int argc, char * const argv[]) {
    int fd,n,valid_mac;
    struct ifreq ifr;
    struct sockaddr_ll sa;
-   struct bpf_program fp;
    int val = 4;
    pcap_t *p;
    char errbuf[PCAP_ERRBUF_SIZE];
@@ -647,11 +623,6 @@ int main(int argc, char * const argv[]) {
      pcap_perror(p, "pcap_set_datalink");
      exit(1);
    }
-   /*bpf_program(p, &fp,ipbuf);
-   if (pcap_setfilter(p, &fp)!=0) {
-     pcap_perror(p, "pcap_setfilter");
-     exit(1);
-   }*/
    printf("Listening on %s (mac: %02x:%02x:%02x:%02x:%02x:%02x ip: %s)\n", interface, dest_mac[0], dest_mac[1], dest_mac[2], dest_mac[3], dest_mac[4], dest_mac[5], ipbuf);
 
    // start doing hard work
