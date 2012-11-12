@@ -195,7 +195,7 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     memmove(bytes+ARP_START+0x12, bytes+ARP_START+0x8, ETH_ALEN+4); 
     // fill in sender
     memcpy(bytes+ARP_START+0x8, dest_mac, ETH_ALEN);
-    memcpy(bytes+ARP_START+0x8+ETH_ALEN, &dest_ip, 4);
+    *(uint32_t*)(bytes+ARP_START+0x8+ETH_ALEN) = dest_ip;
     // make this response
     bytes[ARP_START+0x7] = 0x02;
 
@@ -265,18 +265,16 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          // convert into ms from midnight
          recv = get_ts_utc(&res);
          // put it in place, twice...
-         memcpy(bytes+UDP_DATA+0x04, &recv, 4);
-         memcpy(bytes+UDP_DATA+0x8, &recv, 4);
-         // fill in little magic (dunno what this is)
+         *(uint32_t*)(bytes+UDP_DATA+0x4) = recv;
+         *(uint32_t*)(bytes+UDP_DATA+0x8) = recv;
+         // fill in little magic (dunno what this is for...)
          memcpy(bytes+UDP_DATA+0x14, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
          // juniper uses uptime as epoch, we use something similar
          // contrary to what you think, it doesn't have to agree with them
          clock_gettime(CLOCK_MONOTONIC, &res); 
-         usec = htonl(res.tv_nsec/1000);
-         res.tv_sec = htonl(res.tv_sec);
          // put in us accurate "uptime"
-         memcpy(bytes+UDP_DATA+0x24, &res.tv_sec, 4);
-         memcpy(bytes+UDP_DATA+0x28, &usec, 4);
+         *(uint32_t*)(bytes+UDP_DATA+0x24) = htonl(res.tv_sec);
+         *(uint32_t*)(bytes+UDP_DATA+0x28) = htonl(res.tv_nsec/1000);
       }
    // cisco IP SLA again.
    } else if (*(uint16_t*)(bytes+UDP_DPORT) == dest_udp_ip_sla && plen > UDP_DATA + 31) {
@@ -291,15 +289,15 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          // generate received ntp timestamp
          ts_to_ntp(&res0, &t2, &t3);
          // put it in place
-         memcpy(bytes+UDP_DATA + 0x0c, &t2, 4);
-         memcpy(bytes+UDP_DATA + 0x10, &t3, 4);
+         *(uint32_t*)(bytes+UDP_DATA+0xc) = t2;
+         *(uint32_t*)(bytes+UDP_DATA+0x10) = t3;
          // generate about-to-send ntp timestamp
          ts_to_ntp(&res, &t2, &t3);
          // put it in place
-         memcpy(bytes+UDP_DATA + 0x14, &t2, 4);
-         memcpy(bytes+UDP_DATA + 0x18, &t3, 4);
+         *(uint32_t*)(bytes+UDP_DATA+0x14) = t2;
+         *(uint32_t*)(bytes+UDP_DATA+0x18) = t3;
          // copy packet sequence number
-         memmove(bytes+UDP_DATA + 0x36, bytes+UDP_DATA + 0x34, 2);
+         *(uint16_t*)(bytes+UDP_DATA+0x36) = *(uint16_t*)(bytes+UDP_DATA+0x34);
          // fill out some cisco specific cruft
          memcpy(bytes+0x52, "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00", 11);
       } else {
@@ -346,10 +344,6 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    swapmac(bytes);
    swapip(bytes);
 
-   // that's the IP part, recalculate checksum
-   *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
-   ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
-
    // check for ICMP type
    if (*(uint16_t*)(bytes+ICMP_START) == 8) { // icmp echo
      // this is simple ping, change it to response.
@@ -360,26 +354,24 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
       // this is a juniper RPM format. we need to put here the recv/trans stamp too
       uint32_t usec,sent;
       // fill in received timestamp
-      memcpy(bytes+ICMP_DATA+0x04, &recv, 4);
+      *(uint32_t*)(bytes+ICMP_DATA+0x4) = recv;
       // juniper uses uptime as epoch, we use something similar
       // contrary to what you think, it doesn't have to agree with them
       clock_gettime(CLOCK_MONOTONIC, &res); 
-      usec = htonl(res.tv_nsec/1000);
-      res.tv_sec = htonl(res.tv_sec);
       // put it in place
-      memcpy(bytes+ICMP_DATA+0x24, &res.tv_sec, 4);
-      memcpy(bytes+ICMP_DATA+0x28, &usec, 4);
+      *(uint32_t*)(bytes+ICMP_DATA+0x24) = htonl(res.tv_sec);
+      *(uint32_t*)(bytes+ICMP_DATA+0x28) = htonl(res.tv_nsec/1000);
       clock_gettime(CLOCK_REALTIME, &res);
       // just for the sake of appearances, fill in about-to-send ts
       sent = get_ts_utc(&res);
-      memcpy(bytes+ICMP_DATA+0x0e, &sent, 4);
-      *(uint32_t*)(bytes+ICMP_START) = 0;
+      *(uint32_t*)(bytes+ICMP_DATA+0x0e) = sent;
       // change to response
       bytes[ICMP_START] = 0x0e;
    } else {
       return; // do not process
    }
-   // fix icmp header
+   *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
+   ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
    // recalculate checksum
    ip_checksum(bytes+ICMP_START, plen - 38, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
@@ -420,7 +412,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
        memcpy(response,bytes,plen);
 
        // ensure dst ip is correct
-       if (memcmp(response+IP_O_DADDR, &dest_ip, sizeof dest_ip)) return;
+       if (*(uint32_t*)(response+IP_O_DADDR) != dest_ip) return;
 
        // choose protocol
        switch(bytes[IP_O_PROTO]) {
