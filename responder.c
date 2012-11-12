@@ -397,7 +397,7 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
  */
 void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 {
-   u_char response[1500];
+   u_char response[1501]; // to avoid possible buffer overrun in tcp_checksum
    int fd;
    size_t plen;
 
