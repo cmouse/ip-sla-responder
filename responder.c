@@ -452,7 +452,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
        // total size of entire packet including everything
        plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; 
 
-       if (plen > 1500) return; // accept only 1500 byte packages
+       if (plen > ETHER_MAX_LEN) return; // accept only sane frame lenghts
        memcpy(response,bytes,plen);
 
        // ensure dst ip is correct
@@ -571,7 +571,6 @@ int main(int argc, char * const argv[]) {
    int fd,n,valid_mac;
    struct ifreq ifr;
    struct sockaddr_ll sa;
-   int val = 4;
    pcap_t *p;
    char errbuf[PCAP_ERRBUF_SIZE];
    char interface[IFNAMSIZ];
@@ -621,7 +620,7 @@ int main(int argc, char * const argv[]) {
    if (valid_mac == 0) { 
      // need mac from our interface
      memset(&ifr,0,sizeof ifr);
-     snprintf(ifr.ifr_name, IFNAMSIZ, interface);
+     strncpy(ifr.ifr_name, interface, IFNAMSIZ);
      ioctl(fd, SIOCGIFHWADDR, &ifr);
      memcpy(dest_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
    }
@@ -631,7 +630,7 @@ int main(int argc, char * const argv[]) {
 
    // get interface index for binding
    memset(&ifr,0,sizeof ifr);
-   snprintf(ifr.ifr_name, IFNAMSIZ, interface);
+   strncpy(ifr.ifr_name, interface, IFNAMSIZ);
    ioctl(fd, SIOCGIFINDEX, &ifr);
    memset(&sa,0,sizeof sa);
 
