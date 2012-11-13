@@ -431,7 +431,7 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
  */
 void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 {
-   u_char response[1501]; // to avoid possible buffer overrun in tcp_checksum
+   u_char response[ETH_FRAME_LEN+1]; // to avoid possible buffer overrun in tcp_checksum
    int fd;
    size_t plen;
 
@@ -452,7 +452,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
        // total size of entire packet including everything
        plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; 
 
-       if (plen > 1500) return; // accept only 1500 byte packages
+       if (plen > ETH_FRAME_LEN) return; // accept only 1500 byte packages
        memcpy(response,bytes,plen);
 
        // ensure dst ip is correct
@@ -473,7 +473,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
      // ARP protocol
      case 0x0608:
       // ensure request size.
-      if (h->caplen < 46) return; // require 45 byte packet
+      if (h->caplen < 46 || h->caplen > ETH_FRAME_LEN) return; // require 45 byte packet
       memcpy(response,bytes,h->caplen);
       process_and_send_arp(fd,response,h->caplen);
       break;
