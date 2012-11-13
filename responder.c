@@ -621,7 +621,7 @@ int main(int argc, char * const argv[]) {
    if (valid_mac == 0) { 
      // need mac from our interface
      memset(&ifr,0,sizeof ifr);
-     snprintf(ifr.ifr_name, IFNAMSIZ, interface);
+     strncpy(ifr.ifr_name, interface, IFNAMSIZ);
      ioctl(fd, SIOCGIFHWADDR, &ifr);
      memcpy(dest_mac, ifr.ifr_hwaddr.sa_data, ETH_ALEN);
    }
@@ -631,7 +631,7 @@ int main(int argc, char * const argv[]) {
 
    // get interface index for binding
    memset(&ifr,0,sizeof ifr);
-   snprintf(ifr.ifr_name, IFNAMSIZ, interface);
+   strncpy(ifr.ifr_name, interface, IFNAMSIZ);
    ioctl(fd, SIOCGIFINDEX, &ifr);
    memset(&sa,0,sizeof sa);
 
