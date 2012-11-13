@@ -102,7 +102,7 @@ void do_pak_handler(const u_char *bytes, ssize_t len) {
    memset(&h, 0, sizeof(h));
    h.len = h.caplen = len;
    gettimeofday(&h.ts,NULL);
-   bin2hex(bytes, h.caplen);
+   //bin2hex(bytes, h.caplen);
    pak_handler((u_char*)&fd, &h, bytes);
 }
 
@@ -234,6 +234,8 @@ int main(void) {
    run_test(test_valid_arp);
    run_test(test_arp_not_for_me);
    run_test(test_invalid_arp);
+
+   printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
 
    return EXIT_SUCCESS;
 }
