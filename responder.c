@@ -45,9 +45,15 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #define ETH_O_SOURCE 6
 #define ETH_O_PROTO 12
 
+#ifdef HAS_VLAN
+#define ETH_O_VLAN 4
+#else
+#define ETH_O_VLAN 0
+#endif
+
 #define IP_MAGIC 45
 
-#define IP_START ETH_HLEN+4
+#define IP_START ETH_HLEN+ETH_O_VLAN
 #define IP_O_TOS IP_START+1
 #define IP_O_TOT_LEN IP_START+2
 #define IP_O_ID IP_START+4
@@ -183,6 +189,11 @@ inline void swapip(u_char *bytes) {
 void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     u_char tmp[ETH_ALEN];
 
+   if (debuglevel) {
+     printf("Received %lu bytes\n", plen);
+     bin2hex(bytes, plen);
+   }
+
     if (*(uint16_t*)(bytes+ARP_START)!=0x0100 ||     // hwtype ethernet
         *(uint16_t*)(bytes+ARP_START+2)!=0x008 ||    // ethetype IP
         *(uint8_t*)(bytes+ARP_START+4)!=0x06 ||      // hwlen 6
@@ -204,7 +215,7 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     bytes[ARP_START+0x7] = 0x02;
 
     // clean up response
-    memset(bytes+0x2e,0,18);
+    memset(bytes+ARP_START+0x1a,0,18);
 
 /*    // we use msghdr here.
     msg.msg_name = NULL;
@@ -243,6 +254,11 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
    struct timespec res;
    // for swapping sport<->dport
    uint16_t tmp;
+
+   if (debuglevel) {
+     printf("Received %lu bytes\n", plen);
+     bin2hex(bytes, plen);
+   }
 
    swapmac(bytes);
    swapip(bytes);
@@ -356,6 +372,11 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
   
    recv = get_ts_utc(&res0);
 
+   if (debuglevel) {
+     printf("Received %lu bytes\n", plen);
+     bin2hex(bytes, plen);
+   }
+
    swapmac(bytes);
    swapip(bytes);
 
@@ -388,7 +409,7 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
    ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
    // recalculate checksum
-   ip_checksum(bytes+ICMP_START, plen - 38, (uint16_t*)(bytes+ICMP_START+2));
+   ip_checksum(bytes+ICMP_START, plen - ICMP_START, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
    if (send(fd, bytes, plen, 0) < (ssize_t)plen) {
       perror("send_icmp");
@@ -420,16 +441,13 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    // file descriptor for output
    fd = *(int*)user;
 
-   if (debuglevel) {
-     printf("Received %d bytes\n", h->caplen);
-     bin2hex(bytes, h->caplen);
-   }
-
+#ifdef HAS_VLAN
    // require vlan
    if (*(unsigned short*)(bytes+ETH_O_PROTO) != 0x0081) return;   
+#endif
 
    // choose protocol 
-   switch((*(unsigned short*)(bytes+ETH_O_PROTO+0x4))) {
+   switch((*(unsigned short*)(bytes+ETH_O_PROTO+ETH_O_VLAN))) {
      case 0x0008:
        // total size of entire packet including everything
        plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; 

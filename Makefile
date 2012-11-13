@@ -1,5 +1,5 @@
 CC=gcc
-CFLAGS=-W -Wall -Wno-unused -g -O2 -mtune=native -march=native 
+CFLAGS=-W -Wall -Wno-unused -g -O2 -mtune=native -march=native -DHAS_VLAN=1
 LD=gcc
 LDFLAGS=-g
 BINARY=responder
