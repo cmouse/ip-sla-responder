@@ -452,7 +452,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
        // total size of entire packet including everything
        plen = ntohs(*(unsigned short*)(bytes+IP_O_TOT_LEN))+ETH_HLEN+4; 
 
-       if (plen > 1500) return; // accept only 1500 byte packages
+       if (plen > ETHER_MAX_LEN) return; // accept only sane frame lenghts
        memcpy(response,bytes,plen);
 
        // ensure dst ip is correct
