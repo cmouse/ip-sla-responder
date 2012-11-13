@@ -1,5 +1,6 @@
 *.pcap
 *.o
 responder
+responder-test
 *.bak
 test*
