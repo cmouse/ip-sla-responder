@@ -571,7 +571,6 @@ int main(int argc, char * const argv[]) {
    int fd,n,valid_mac;
    struct ifreq ifr;
    struct sockaddr_ll sa;
-   int val = 4;
    pcap_t *p;
    char errbuf[PCAP_ERRBUF_SIZE];
    char interface[IFNAMSIZ];
