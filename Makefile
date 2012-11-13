@@ -1,15 +1,19 @@
 CC=gcc
-CFLAGS=-W -Wall -Wno-unused -g -O2 -mtune=native -march=native -DHAS_VLAN=1
+CFLAGS=-W -Wall -Wno-unused -g -O0 -mtune=native -march=native -DHAS_VLAN=1
 LD=gcc
 LDFLAGS=-g
-BINARY=responder
-OBJECTS=responder.o
+BINARIES=responder-test responder
 LIBS=-lrt -lpcap
 
 .PHONY: all clean
 
-$(BINARY): $(OBJECTS)
-	$(LD) $(LDFLAGS) -o $(BINARY) $(OBJECTS) $(LIBS)
+all: $(BINARIES)
+
+responder: responder-main.o
+	$(LD) $(LDFLAGS) -o $@ $< $(LIBS)
+
+responder-test: responder-test.o
+	$(LD) $(LDFLAGS) -o $@ $< $(LIBS)
 
 test: test.o
 	$(LD) $(LDFLAGS) -o $@ $< $(LIBS)
@@ -18,5 +22,5 @@ test: test.o
 	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -rf $(BINARY) *.o *.so
+	rm -rf $(BINARIES) *.o *.so
 
