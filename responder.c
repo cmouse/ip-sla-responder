@@ -281,7 +281,7 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          return; // ignore this
       }
    // juniper RPM uses port 7 for udp-ping
-   } else if (*(uint16_t*)(bytes+UDP_DPORT) == ntohs(7)) {
+   } else if (*(uint16_t*)(bytes+UDP_DPORT) == 0x0700) {  // htons(7)
       if (*(uint16_t*)(bytes+UDP_DATA+0x1c) == 0x0100 &&   // rpm signature
           *(uint16_t*)(bytes+UDP_DATA+0x1e) == 0x1096 && plen > 90) {
          uint32_t usec;
