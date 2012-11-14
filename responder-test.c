@@ -4,6 +4,7 @@
 #include "responder.c"
 #include <stdarg.h>
 #include <net/if_arp.h>
+#include <netinet/udp.h>
 
 #define DEFAULT_SRC_MAC (u_char*)"\x46\x45\x44\x43\x42\x41"
 #define DEFAULT_DST_MAC (u_char*)"\x36\x35\x34\x33\x32\x31"
@@ -207,6 +208,44 @@ int test_invalid_arp(void) {
    return 0;
 }
 
+int test_checksum_ip(void) {
+  struct iphdr hdr;
+  test_log("#0004 IP checksum test");
+
+  // a simple valid IP header for testing purposes
+  // 10.0.2.14 -> 10.0.2.14, 63 bytes, UDP. Expected checksum 0x5839
+  memcpy(&hdr, "\x45\x00\x00\x3f\x0a\x5a\x00\x00\x40\x11\x58\x39\x0a\x00\x02\x0e\x0a\x00\x02\x0e", sizeof(hdr));
+
+  ip_checksum(&hdr, sizeof hdr, &hdr.check);
+
+  if (hdr.check != 0) {
+      test_log("Checksum wrong: (0 != %04x)", hdr.check);
+  }
+
+  return hdr.check; 
+}
+
+int test_checksum_tcp(void) {
+   test_log("#0005 TCP checksum test");
+   struct udphdr uh;
+   u_char data[64];
+
+   uh.source = htons(7);
+   uh.dest = htons(7);
+   uh.len = 64;
+   uh.check = 0xb423;
+   memcpy(data, &uh, sizeof uh);
+   memcpy(data+sizeof(uh), "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)&dest_ip, data, 64, &uh.check);
+
+  if (uh.check != 0) {
+      test_log("Checksum wrong: (0 != %04x)", uh.check);
+  }
+
+   return uh.check;
+}
+
+
 void run_test(int (*test_item)(void)) {
    test_sanitize();
    if (test_item() != 0) {
@@ -234,6 +273,8 @@ int main(void) {
    run_test(test_valid_arp);
    run_test(test_arp_not_for_me);
    run_test(test_invalid_arp);
+   run_test(test_checksum_ip);
+   run_test(test_checksum_tcp);
 
    printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
 
