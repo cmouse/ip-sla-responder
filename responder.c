@@ -53,28 +53,28 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 #define IP_MAGIC 45
 
-#define IP_START ETH_HLEN+ETH_O_VLAN
-#define IP_O_TOS IP_START+1
-#define IP_O_TOT_LEN IP_START+2
-#define IP_O_ID IP_START+4
-#define IP_O_FRAG_OFF IP_START+6
-#define IP_O_TTL IP_START+8
-#define IP_O_PROTO IP_START+9
-#define IP_O_CHKSUM IP_START+10
-#define IP_O_SADDR IP_START+12
-#define IP_O_DADDR IP_START+16
+#define IP_START (ETH_HLEN+ETH_O_VLAN)
+#define IP_O_TOS (IP_START+1)
+#define IP_O_TOT_LEN (IP_START+2)
+#define IP_O_ID (IP_START+4)
+#define IP_O_FRAG_OFF (IP_START+6)
+#define IP_O_TTL (IP_START+8)
+#define IP_O_PROTO (IP_START+9)
+#define IP_O_CHKSUM (IP_START+10)
+#define IP_O_SADDR (IP_START+12)
+#define IP_O_DADDR (IP_START+16)
 
-#define ICMP_START IP_START+20
-#define ICMP_DATA ICMP_START+8
+#define ICMP_START (IP_START+20)
+#define ICMP_DATA (ICMP_START+8)
 
-#define UDP_START IP_START+20
-#define UDP_SPORT UDP_START
-#define UDP_DPORT UDP_START+2
-#define UDP_LEN UDP_START+4
-#define UDP_CHECKSUM UDP_START+6
-#define UDP_DATA UDP_START+8
+#define UDP_START (IP_START+20)
+#define UDP_SPORT (UDP_START)
+#define UDP_DPORT (UDP_START+2)
+#define UDP_LEN (UDP_START+4)
+#define UDP_CHECKSUM (UDP_START+6)
+#define UDP_DATA (UDP_START+8)
 
-#define ARP_START ETH_HLEN+4
+#define ARP_START (ETH_HLEN+4)
 
 #define DEFAULT_IP_ADDR "192.168.0.2"
 #define DEFAULT_IPSLA_PORT 50505
@@ -216,17 +216,6 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
 
     // clean up response
     memset(bytes+ARP_START+0x1c,0,18);
-
-/*    // we use msghdr here.
-    msg.msg_name = NULL;
-    msg.msg_namelen = 0;
-    iovec.iov_base = bytes;
-    iovec.iov_len = 0x40;
-    msg.msg_iov = &iovec;
-    msg.msg_iovlen = 1;
-    msg.msg_control = NULL;
-    msg.msg_controllen = 0;
-    msg.msg_flags = 0; */
 
     // we need to send 64b to get FCS right
     if (send(fd, bytes, plen, 0) < 64) {
@@ -442,11 +431,19 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    fd = *(int*)user;
 
    // check if this is intended for us in the first place
-   if (memcmp(bytes, dest_mac, ETH_ALEN) && memcmp(bytes, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) return;
+   if (memcmp(bytes, dest_mac, ETH_ALEN) && memcmp(bytes, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) {
+        if (debuglevel) 
+           printf("Ignoring pak not intended for us (mac mismatch and not broadcast)\n");
+	return;
+   }
 
 #ifdef HAS_VLAN
    // require vlan
-   if (*(unsigned short*)(bytes+ETH_O_PROTO) != 0x0081) return;   
+   if (*(unsigned short*)(bytes+ETH_O_PROTO) != 0x0081) { 
+        if (debuglevel)
+           printf("Ignoring pak because it has no VLAN and VLAN is required\n");
+	return;
+   }
 #endif
 
    // choose protocol 
@@ -471,6 +468,10 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
             // udp
             process_and_send_udp(fd,response,plen);
             break;
+          default:
+            if (debuglevel) {
+                 printf("Cannot understand protocol %u\n", bytes[IP_O_PROTO]);
+            }
        }
        break;
      // ARP protocol
@@ -480,5 +481,9 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
       memcpy(response,bytes,h->caplen);
       process_and_send_arp(fd,response,h->caplen);
       break;
+     default:
+       if (debuglevel) {
+         printf("Cannot understand ethernet protocol %04x\n", *(unsigned short*)(bytes+ETH_O_PROTO+ETH_O_VLAN));
+       }
    }
 }
