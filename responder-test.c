@@ -306,7 +306,6 @@ int test_icmp_ping(void) {
    }
    
    if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 64, 1)) return 1;
-   memset(&ih, 0, sizeof ih);
 
    // check that all is good.
    ip_checksum(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip), sizeof(ih)+56, (uint16_t*)(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip) + 2));
@@ -320,6 +319,80 @@ int test_icmp_ping(void) {
    
    // check payload
    return memcmp(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip) + sizeof(ih), "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
+}
+
+int test_junos_icmp_rpm(void) {
+   u_char bytes[ETH_FRAME_LEN],*ptr;
+   struct icmphdr ih;
+   struct timespec ts;
+   uint32_t tval;
+
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 64, 1, bytes);
+   ptr = bytes + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip);
+   ih.type = ICMP_TIMESTAMP;
+   ih.code = 0;
+   ih.checksum = 0;
+   ih.un.echo.id = 0x4343;
+   ih.un.echo.sequence = 0x4242;
+   memcpy(ptr, &ih, sizeof(ih));
+   ptr += sizeof(ih);
+   // toss in some stamps
+   clock_gettime(CLOCK_REALTIME, &ts);
+   tval = get_ts_utc(&ts);
+   memcpy(ptr, &tval, 4);
+   ptr += 4;
+   tval = 0;
+   memcpy(ptr, &tval, 4);
+   ptr += 4;
+   memcpy(ptr, &tval, 4);
+   // then we add some junos specific stuff
+   ptr += 20;
+   memcpy(ptr, "\x00\x01\x96\x10", 4);
+   ptr += 8;
+   // put a stamp here...
+   memcpy(ptr, "\x01\x02\x03\x04\x05\x06\x07\x08", 8);
+   // checksum
+   ip_checksum(bytes + ICMP_START, 64, (uint16_t*)(bytes + ICMP_START + 2));
+   // transmit
+   // emulate 0.1s delay 
+   usleep(10000);
+   do_pak_handler(bytes, 102);
+
+   // did we get anything?
+   if (test_result_len != 102) {
+     test_log("result is not 102 bytes long as expected, was %lu", test_result_len);
+   }
+
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 64, 1)) return 1;
+
+   ip_checksum(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip), sizeof(ih)+56, (uint16_t*)(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip) + 2));
+   memcpy(&ih, test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip), sizeof ih);
+
+   if (ih.checksum != 0) { test_log("ICMP packet checksum wrong"); return 1; }
+   if (ih.type != ICMP_TIMESTAMPREPLY) { test_log("unexpected ICMP type in response"); return 1; }
+   if (ih.code != 0) { test_log("unexpected ICMP code in response"); return 1; }
+   if (ih.un.echo.id != 0x4343) { test_log("wrong ICMP echo id"); return 1; }
+   if (ih.un.echo.sequence != 0x4242) { test_log("wrong ICMP echo sequence"); return 1; }
+
+   // ensure that the originate timestamp <= recv timestamp <= transmit timestamp
+   if (*(uint32_t*)(test_result_buffer + ICMP_DATA) > *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x4) ||
+       *(uint32_t*)(test_result_buffer + ICMP_DATA) > *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x8) ||  
+       *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x4) > *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x8)) {
+      test_log("originate <= receive <= transmit did not match: got %08x <= %08x <= %08x", 
+               *(uint32_t*)(test_result_buffer + ICMP_DATA), 
+               *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x4), 
+               *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x8)); 
+      return 1;
+   }
+
+   // ensure that we have some stamp in junos reply
+   if (*(uint64_t*)(test_result_buffer + ICMP_DATA + 0x24) == 0) {
+      test_log("missing hardware timestamp in reply");
+      return 1;
+   }
+
+   return 0;
 }
 
 void run_test(int (*test_item)(void), const char *test_name) {
@@ -355,6 +428,7 @@ int main(void) {
    run_test(test_checksum_ip, "produces valid ip checksum");
    run_test(test_checksum_tcp, "produces valid tcp checksum");
    run_test(test_icmp_ping, "responds to ICMP echo request");
+   run_test(test_junos_icmp_rpm, "juniper ICMP RPM ping");
 
    printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
 
