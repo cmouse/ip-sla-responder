@@ -8,10 +8,13 @@
 
 #define DEFAULT_SRC_MAC (u_char*)"\x46\x45\x44\x43\x42\x41"
 #define DEFAULT_DST_MAC (u_char*)"\x36\x35\x34\x33\x32\x31"
+#define DEFAULT_DST_IP (uint32_t*)"\xc0\xa8\x00\x02"
 #define DEFAULT_SRC_IP (uint32_t*)"\xc0\xa8\x53\x47"
 
 int tests_ok;
 int tests_not_ok;
+
+static int current_test = 0;
 
 unsigned char test_result_buffer[ETH_FRAME_LEN];
 ssize_t test_result_len;
@@ -107,68 +110,57 @@ void do_pak_handler(const u_char *bytes, ssize_t len) {
    pak_handler((u_char*)&fd, &h, bytes);
 }
 
-int test_valid_arp(void) {
-   u_char bytes[ETH_FRAME_LEN];
+void build_arp_pak(const u_char *dstmac, const u_char *srcmac, short arpop, uint32_t dstip, uint32_t srcip, u_char *bytes) {
    struct arphdr ah;
-
-   test_log("#0001 ARP send/reply test (expect reply)");
-   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_ARP, bytes);
-
-   // simple arp who is
+   build_eth_header(dstmac, srcmac, 42, ETH_P_ARP, bytes);
    ah.ar_hrd = htons(ARPHRD_ETHER);
    ah.ar_pro = htons(ETH_P_IP);
    ah.ar_hln = ETH_ALEN;
    ah.ar_pln = 4; // ip address size
-   ah.ar_op = htons(ARPOP_REQUEST);
-
+   ah.ar_op = htons(arpop);
    memcpy(bytes + ETH_HLEN + ETH_O_VLAN, &ah, sizeof ah);
-   
-   // put in arp payload
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah), DEFAULT_SRC_MAC, ETH_ALEN);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN, DEFAULT_SRC_IP, 4);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN + 4, DEFAULT_DST_MAC, ETH_ALEN);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN*2 + 4, &dest_ip, 4);
-  
-   do_pak_handler(bytes, 64);
+   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah), srcmac, ETH_ALEN);
+   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN, &srcip, 4);
+   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN + 4, dstmac, ETH_ALEN);
+   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN*2 + 4, &dstip, 4);
+}
 
-   if (test_result_len != 64) {
-     test_log("result is not 64 bytes long as expected");
-     return 1; 
-   }
-
-   // ensure response
-   if (test_eth_header(test_result_buffer, ETH_P_ARP)) return 1;
-   
-   // check arp response
-   memcpy(&ah, test_result_buffer + ETH_HLEN + ETH_O_VLAN, sizeof ah);
+int assert_arp(u_char *bytes) {
+   struct arphdr ah;
+   if (test_eth_header(bytes, ETH_P_ARP)) return 1;
+   memcpy(&ah, bytes + ETH_HLEN + ETH_O_VLAN, sizeof ah);
    if (ah.ar_hrd != htons(ARPHRD_ETHER)) { test_log("invalid hwaddr in response"); return 1; }
    if (ah.ar_pro != htons(ETH_P_IP)) { test_log("invalid protocol in response"); return 1; }
    if (ah.ar_hln != ETH_ALEN) { test_log("invalid hwaddr length in response"); return 1; }
    if (ah.ar_pln != 4) { test_log("invalid protocol length in response"); return 1; }
    if (ah.ar_op != htons(ARPOP_REPLY)) { test_log("response is not reply"); return 1; }
-
+   // make sure it was intended for us.
+   if (memcmp(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah), DEFAULT_DST_MAC, ETH_ALEN)) { test_log("wrong source mac in reply"); return 1; }
+   if (memcmp(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN, DEFAULT_DST_IP, 4)) { test_log("wrong source ip in reply"); return 1; }
+   if (memcmp(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN + 4, DEFAULT_SRC_MAC, ETH_ALEN)) { test_log("wrong destination mac in reply"); return 1; }
+   if (memcmp(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN*2 + 4, DEFAULT_SRC_IP, 4)) { test_log("wrong destination ip in reply, %08x != %08x", *(uint32_t*)(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN*2 + 4), *DEFAULT_SRC_IP); return 1; }
    return 0;
+}
+
+int test_valid_arp(void) {
+   u_char bytes[ETH_FRAME_LEN];
+
+   build_arp_pak(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, ARPOP_REQUEST, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, bytes);
+  
+   do_pak_handler(bytes, 64);
+
+   if (test_result_len != 64) {
+     test_log("result is not 64 bytes long as expected, was %lu", test_result_len);
+     return 1; 
+   }
+
+   return assert_arp(test_result_buffer);
 }
 
 int test_arp_not_for_me(void) {
    u_char bytes[ETH_FRAME_LEN];
-   struct arphdr ah;
-   test_log("#0002 ARP send/reply test (not targeted to responder)");
-   build_eth_header(DEFAULT_SRC_MAC, DEFAULT_SRC_MAC, 42, ETH_P_ARP, bytes);
-   // simple arp who is
-   ah.ar_hrd = htons(ARPHRD_ETHER);
-   ah.ar_pro = htons(ETH_P_IP);
-   ah.ar_hln = ETH_ALEN;
-   ah.ar_pln = 4; // ip address size
-   ah.ar_op = htons(ARPOP_REQUEST);
 
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN, &ah, sizeof ah);
-
-   // put in arp payload
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah), DEFAULT_SRC_MAC, ETH_ALEN);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN, DEFAULT_SRC_IP, 4);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN + 4, DEFAULT_SRC_MAC, ETH_ALEN);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN*2 + 4, &dest_ip, 4);
+   build_arp_pak(DEFAULT_SRC_MAC, DEFAULT_SRC_MAC, ARPOP_REQUEST, *DEFAULT_SRC_IP, *DEFAULT_SRC_IP, bytes);
 
    do_pak_handler(bytes, 64);
 
@@ -181,23 +173,10 @@ int test_arp_not_for_me(void) {
 
 int test_invalid_arp(void) {
    u_char bytes[ETH_FRAME_LEN];
-   struct arphdr ah;
-   test_log("#0003 ARP send/reply test (not valid)");
-   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_ARP, bytes);
-   // simple arp who is
-   ah.ar_hrd = htons(ARPHRD_ETHER-1);
-   ah.ar_pro = htons(ETH_P_IP+1);
-   ah.ar_hln = ETH_ALEN+1;
-   ah.ar_pln = 4; // ip address size
-   ah.ar_op = htons(ARPOP_REQUEST);
+   build_arp_pak(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, ARPOP_REQUEST, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, bytes);
 
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN, &ah, sizeof ah);
-
-   // put in arp payload
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah), DEFAULT_SRC_MAC, ETH_ALEN);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN, DEFAULT_SRC_IP, 4);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN + 4, DEFAULT_DST_MAC, ETH_ALEN);
-   memcpy(bytes + ETH_HLEN + ETH_O_VLAN + sizeof(ah) + ETH_ALEN*2 + 4, &dest_ip, 4);
+   // do some slight corruption
+   bytes[ETH_HLEN + ETH_O_VLAN] = 0x5;
 
    do_pak_handler(bytes, 64);
 
@@ -208,10 +187,23 @@ int test_invalid_arp(void) {
    return 0;
 }
 
+int test_broadcast_arp(void) {
+   u_char bytes[ETH_FRAME_LEN];
+
+   build_arp_pak((u_char*)"\xff\xff\xff\xff\xff\xff", DEFAULT_SRC_MAC, ARPOP_REQUEST, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, bytes);
+
+   do_pak_handler(bytes, 64);
+
+   if (test_result_len != 64) {
+     test_log("result is not 64 bytes long as expected, was %lu", test_result_len);
+     return 1;
+   }
+
+   return assert_arp(test_result_buffer);
+}
+
 int test_checksum_ip(void) {
   struct iphdr hdr;
-  test_log("#0004 IP checksum test");
-
   // a simple valid IP header for testing purposes
   // 10.0.2.14 -> 10.0.2.14, 63 bytes, UDP. Expected checksum 0x5839
   memcpy(&hdr, "\x45\x00\x00\x3f\x0a\x5a\x00\x00\x40\x11\x58\x39\x0a\x00\x02\x0e\x0a\x00\x02\x0e", sizeof(hdr));
@@ -226,7 +218,6 @@ int test_checksum_ip(void) {
 }
 
 int test_checksum_tcp(void) {
-   test_log("#0005 TCP checksum test");
    struct udphdr uh;
    u_char data[64];
 
@@ -235,7 +226,7 @@ int test_checksum_tcp(void) {
    uh.len = 64;
    uh.check = 0xb423;
    memcpy(data, &uh, sizeof uh);
-   memcpy(data+sizeof(uh), "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
+   memcpy(data+sizeof(uh), "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56); // just some random data to make things interesting
    tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)&dest_ip, data, 64, &uh.check);
 
   if (uh.check != 0) {
@@ -246,7 +237,9 @@ int test_checksum_tcp(void) {
 }
 
 
-void run_test(int (*test_item)(void)) {
+void run_test(int (*test_item)(void), const char *test_name) {
+   test_log("test #%04d: %s", ++current_test, test_name);
+ 
    test_sanitize();
    if (test_item() != 0) {
      test_log("test result: FAILED");
@@ -259,7 +252,7 @@ void run_test(int (*test_item)(void)) {
 }
 
 int main(void) {
-   test_log("Running simple test suite");
+   test_log("IP-SLA Responder test suite");
 
    // bootstrap global vars
    // default IP address
@@ -270,11 +263,12 @@ int main(void) {
    tests_ok = tests_not_ok = 0;
    dest_udp_ip_sla = htons(DEFAULT_IPSLA_PORT); 
 
-   run_test(test_valid_arp);
-   run_test(test_arp_not_for_me);
-   run_test(test_invalid_arp);
-   run_test(test_checksum_ip);
-   run_test(test_checksum_tcp);
+   run_test(test_valid_arp, "replies to valid arp");
+   run_test(test_arp_not_for_me, "ignores arp not intended for us");
+   run_test(test_invalid_arp, "ignores invalid arp");
+   run_test(test_broadcast_arp, "replies to broadcast for our IP");
+   run_test(test_checksum_ip, "produces valid ip checksum");
+   run_test(test_checksum_tcp, "produces valid tcp checksum");
 
    printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
 
