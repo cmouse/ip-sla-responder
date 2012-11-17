@@ -215,7 +215,7 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     bytes[ARP_START+0x7] = 0x02;
 
     // clean up response
-    memset(bytes+ARP_START+0x1a,0,18);
+    memset(bytes+ARP_START+0x1c,0,18);
 
 /*    // we use msghdr here.
     msg.msg_name = NULL;
@@ -442,7 +442,7 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
    fd = *(int*)user;
 
    // check if this is intended for us in the first place
-   if (memcmp(bytes, dest_mac, ETH_ALEN)) return;
+   if (memcmp(bytes, dest_mac, ETH_ALEN) && memcmp(bytes, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) return;
 
 #ifdef HAS_VLAN
    // require vlan
