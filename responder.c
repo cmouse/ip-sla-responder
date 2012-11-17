@@ -284,7 +284,6 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          // fill in little magic (dunno what this is for...)
          memcpy(bytes+UDP_DATA+0x14, "\xee\xdd\xcc\xbb\xaa\xcc\xdd\xee", 8);
          // juniper uses uptime as epoch, we use something similar
-         // contrary to what you think, it doesn't have to agree with them
          clock_gettime(CLOCK_MONOTONIC, &res); 
          // put in us accurate "uptime"
          *(uint32_t*)(bytes+UDP_DATA+0x24) = htonl(res.tv_sec);
@@ -374,30 +373,31 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
      // this is simple ping, change it to response.
      *(uint32_t*)(bytes+ICMP_START) = 0;
    } else if (*(uint16_t*)(bytes+ICMP_START) == 0x000d && plen > 90 &&
-       *(uint16_t*)(bytes+ICMP_DATA+28) == 0x0100 &&
-       *(uint16_t*)(bytes+ICMP_DATA+30) == 0x1096) {
+       *(uint16_t*)(bytes+ICMP_DATA+0x1c) == 0x0100 &&
+       *(uint16_t*)(bytes+ICMP_DATA+0x1e) == 0x1096) {
       // this is a juniper RPM format. we need to put here the recv/trans stamp too
       uint32_t usec,sent;
       // fill in received timestamp
       *(uint32_t*)(bytes+ICMP_DATA+0x4) = recv;
       // juniper uses uptime as epoch, we use something similar
-      // contrary to what you think, it doesn't have to agree with them
       clock_gettime(CLOCK_MONOTONIC, &res); 
       // put it in place
       *(uint32_t*)(bytes+ICMP_DATA+0x24) = htonl(res.tv_sec);
       *(uint32_t*)(bytes+ICMP_DATA+0x28) = htonl(res.tv_nsec/1000);
+      // add transmit ts
       clock_gettime(CLOCK_REALTIME, &res);
-      // just for the sake of appearances, fill in about-to-send ts
       sent = get_ts_utc(&res);
-      *(uint32_t*)(bytes+ICMP_DATA+0x0e) = sent;
+      *(uint32_t*)(bytes+ICMP_DATA+0x08) = sent;
       // change to response
       bytes[ICMP_START] = 0x0e;
    } else {
       return; // do not process
    }
+
+   // recalculate checksums
    *(uint16_t*)(bytes+IP_O_CHKSUM)=0;
+   *(uint16_t*)(bytes+ICMP_START+2)=0;
    ip_checksum(bytes+IP_START, 20, (uint16_t*)(bytes+IP_O_CHKSUM));
-   // recalculate checksum
    ip_checksum(bytes+ICMP_START, plen - ICMP_START, (uint16_t*)(bytes+ICMP_START+2));
    // send packet
    if (send(fd, bytes, plen, 0) < (ssize_t)plen) {
