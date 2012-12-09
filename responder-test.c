@@ -362,6 +362,7 @@ int test_junos_icmp_rpm(void) {
    // did we get anything?
    if (test_result_len != 102) {
      test_log("result is not 102 bytes long as expected, was %lu", test_result_len);
+     return 1;
    }
 
    if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 64, 1)) return 1;
@@ -395,7 +396,261 @@ int test_junos_icmp_rpm(void) {
    return 0;
 }
 
-void run_test(int (*test_item)(void), const char *test_name) {
+int test_icmp_timestamp(void) {
+   u_char bytes[ETH_FRAME_LEN],*ptr;
+   u_char fillval[] = "0123456789abcdef";
+
+   struct icmphdr ih;
+   struct timespec ts;
+   uint32_t tval;
+
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 64, 1, bytes);
+   ptr = bytes + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip);
+   // fill in the entire ICMP with 0123456789abcdef, then put in some stuff
+   for(tval=0;tval<4;tval++) 
+     memcpy(ptr + tval*16, fillval, 16);
+   ih.type = ICMP_TIMESTAMP;
+   ih.code = 0;
+   ih.checksum = 0;
+   ih.un.echo.id = 0x4343;
+   ih.un.echo.sequence = 0x4242;
+   memcpy(ptr, &ih, sizeof(ih));
+   ptr += sizeof(ih);
+   // toss in some stamps
+   clock_gettime(CLOCK_REALTIME, &ts);
+   tval = get_ts_utc(&ts);
+   memcpy(ptr, &tval, 4);
+   ptr += 4;
+   tval = 0;
+   memcpy(ptr, &tval, 4);
+   ptr += 4;
+   memcpy(ptr, &tval, 4);
+   // checksum
+   ip_checksum(bytes + ICMP_START, 64, (uint16_t*)(bytes + ICMP_START + 2));
+   // transmit
+   // emulate 0.1s delay 
+   usleep(10000);
+   do_pak_handler(bytes, 102);
+
+   // did we get anything?
+   if (test_result_len != 102) {
+     test_log("result is not 102 bytes long as expected, was %lu", test_result_len);
+     return 1;
+   }
+
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 64, 1)) return 1;
+
+   ip_checksum(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip), sizeof(ih)+56, (uint16_t*)(test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip) + 2));
+   memcpy(&ih, test_result_buffer + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip), sizeof ih);
+
+   if (ih.checksum != 0) { test_log("ICMP packet checksum wrong"); return 1; }
+   if (ih.type != ICMP_TIMESTAMPREPLY) { test_log("unexpected ICMP type in response"); return 1; }
+   if (ih.code != 0) { test_log("unexpected ICMP code in response"); return 1; }
+   if (ih.un.echo.id != 0x4343) { test_log("wrong ICMP echo id"); return 1; }
+   if (ih.un.echo.sequence != 0x4242) { test_log("wrong ICMP echo sequence"); return 1; }
+
+   // ensure that the originate timestamp <= recv timestamp <= transmit timestamp
+   if (*(uint32_t*)(test_result_buffer + ICMP_DATA) > *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x4) ||
+       *(uint32_t*)(test_result_buffer + ICMP_DATA) > *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x8) ||
+       *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x4) > *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x8)) {
+      test_log("originate <= receive <= transmit did not match: got %08x <= %08x <= %08x",
+               *(uint32_t*)(test_result_buffer + ICMP_DATA),
+               *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x4),
+               *(uint32_t*)(test_result_buffer + ICMP_DATA + 0x8));
+      return 1;
+   }
+
+   return 0;
+}
+
+int test_udp_cisco_init(void) {
+   u_char bytes[ETH_FRAME_LEN],*ptr;
+   struct udphdr uh;
+   struct timespec ts;
+
+   memset(bytes, 0, ETH_FRAME_LEN);
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 32, 17, bytes);
+   ptr = bytes + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip);
+   uh.source = htons(4242);
+   uh.dest   = htons(1967);
+   // packet has 8 bytes of data and 24 bytes of payload
+   uh.len = htons(32);
+   uh.check = 0;
+   // put it in place
+   memcpy(ptr, &uh, sizeof(uh));
+   ptr += sizeof(uh);
+   // put in the actual data
+   *(ptr) = 0x01;
+   memcpy(ptr+0x10, DEFAULT_DST_IP, 4);
+   *((unsigned short*)(ptr+0x14)) = htons(50505); // actual testing port
+
+   // then calculate checksum
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, bytes+UDP_START, 32, (unsigned short*)(bytes+UDP_START+0x06));
+   
+   // and that's it. 
+   do_pak_handler(bytes, 66 + ETH_O_VLAN);
+
+   // did we get anything?
+   if (test_result_len != 66 + ETH_O_VLAN) {
+     test_log("result is not %u bytes long as expected, was %lu", 70, test_result_len);
+     return 1;
+   }
+
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 32, 17)) return 1;
+
+   // checksum check
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, test_result_buffer+UDP_START, 32, (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
+      test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
+      return 1;
+   }
+
+   // check that something nice was sent.
+   if (*(test_result_buffer + UDP_DATA + 0x03) != 0x08 ||
+       memcmp(test_result_buffer + UDP_DATA + 0x04, "\0\0\0\0\0\0\0\0", 8)) {
+     test_log("invalid response - check your code");
+     return 1;
+   }
+
+   return 0;
+}
+
+int test_udp_cisco_jitter_type_2(void) {
+   u_char bytes[ETH_FRAME_LEN],*ptr;
+   struct udphdr uh;
+   struct timespec ts;
+
+   memset(bytes, 0, ETH_FRAME_LEN);
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 40, 17, bytes);
+   ptr = bytes + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip);
+   uh.source = htons(4242);
+   uh.dest   = htons(50505);
+   // packet has 8 bytes of data and 32 bytes of payload
+   uh.len = htons(40);
+   uh.check = 0;
+   // put it in place
+   memcpy(ptr, &uh, sizeof(uh));
+   ptr += sizeof(uh);
+
+   clock_gettime(CLOCK_REALTIME, &ts);  
+
+   // put in the actual data, milliseconds
+   *(uint16_t*)(ptr) = htons(2);
+   *(uint32_t*)(ptr + 0x4) = htonl(get_ts_utc(&ts)); 
+   *(uint16_t*)(ptr + 0xc) = 0x123;
+
+   // then calculate checksum
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
+
+   // and that's it. 
+   // emulate 0.1s delay 
+   usleep(10000);
+   do_pak_handler(bytes, 74 + ETH_O_VLAN);
+
+   // did we get anything?
+   if (test_result_len != 74 + ETH_O_VLAN) {
+     test_log("result is not %u bytes long as expected, was %lu", 74+ETH_O_VLAN, test_result_len);
+     return 1;
+   }
+
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 40, 17)) return 1;
+
+   // checksum check
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, test_result_buffer+UDP_START, 40, (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
+      test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
+      return 1;
+   }
+
+   // check that sequence number is correct
+   if (*(uint16_t*)(test_result_buffer + UDP_DATA + 0xc) != *(uint16_t*)(test_result_buffer + UDP_DATA + 0xe)) {
+      test_log("got invalid sequence number, expected %02x, got %02x", *(uint16_t*)(test_result_buffer + UDP_DATA + 0xc), *(uint16_t*)(test_result_buffer + UDP_DATA + 0xe));
+      return 1;
+   }
+   // check that timestamp is bigger
+   if (*(uint32_t*)(test_result_buffer + UDP_DATA + 0x4) > *(uint32_t*)(test_result_buffer + UDP_DATA + 0x8)) {
+      test_log("t1 timestamp was larger than t2 timestamp");
+      return 1;
+   }
+
+   return 0;
+}
+
+int test_udp_cisco_jitter_type_3(void) {
+   u_char bytes[ETH_FRAME_LEN],*ptr;
+   struct udphdr uh;
+   struct timespec ts;
+   uint32_t t2, t3;
+
+   memset(bytes, 0, ETH_FRAME_LEN);
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 40, 17, bytes);
+   ptr = bytes + ETH_HLEN + ETH_O_VLAN + sizeof(struct ip);
+   uh.source = htons(4242);
+   uh.dest   = htons(50505);
+   // packet has 8 bytes of data and 32 bytes of payload
+   uh.len = htons(40);
+   uh.check = 0;
+   // put it in place
+   memcpy(ptr, &uh, sizeof(uh));
+   ptr += sizeof(uh);
+
+   clock_gettime(CLOCK_REALTIME, &ts);  
+
+   // put in the actual data, microseconds
+   *(uint16_t*)(ptr) = htons(3);
+   ts_to_ntp(&ts, &t2, &t3);
+   *(uint32_t*)(ptr+0x4) = t2;
+   *(uint32_t*)(ptr+0x8) = t3;
+   *(uint16_t*)(ptr+0x34) = 0x123;
+
+   // then calculate checksum
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
+
+   // and that's it. 
+   // emulate 0.1s delay 
+   usleep(10000);
+   do_pak_handler(bytes, 74 + ETH_O_VLAN);
+
+   // did we get anything?
+   if (test_result_len != 74 + ETH_O_VLAN) {
+     test_log("result is not %u bytes long as expected, was %lu", 74 + ETH_O_VLAN, test_result_len);
+     return 1;
+   }
+
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 40, 17)) return 1;
+
+   // checksum check
+   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, test_result_buffer+UDP_START, 40, (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
+      test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
+      return 1;
+   }
+
+   // check that sequence number is correct
+   if (*(uint16_t*)(test_result_buffer + UDP_DATA + 0x34) != *(uint16_t*)(test_result_buffer + UDP_DATA + 0x36)) {
+      test_log("got invalid sequence number, expected %02x, got %02x", *(uint16_t*)(test_result_buffer + UDP_DATA + 0x34), *(uint16_t*)(test_result_buffer + UDP_DATA + 0x36));
+      return 1;
+   }
+   // check that timestamp is bigger
+   if (ntohl(*(uint32_t*)(test_result_buffer + UDP_DATA + 0x4)) >= ntohl(*(uint32_t*)(test_result_buffer + UDP_DATA + 0xC)) &&
+       ntohl(*(uint32_t*)(test_result_buffer + UDP_DATA + 0x8)) >= ntohl(*(uint32_t*)(test_result_buffer + UDP_DATA + 0x10))) {
+      test_log("t1 timestamp was larger than t2 timestamp");
+      return 1;
+   }
+
+   return 0;
+}
+
+int test_udp_junos_rpm(void) {
+   test_log("not implemented");
+   return 1;
+}
+
+void run_test(int (*test_item)(void),  const char *test_name) {
    test_log("test #%04d: %s", ++current_test, test_name);
  
    test_sanitize();
@@ -428,8 +683,12 @@ int main(void) {
    run_test(test_checksum_ip, "produces valid ip checksum");
    run_test(test_checksum_tcp, "produces valid tcp checksum");
    run_test(test_icmp_ping, "responds to ICMP echo request");
-   run_test(test_junos_icmp_rpm, "juniper ICMP RPM ping");
-
+   run_test(test_junos_icmp_rpm, "responds to juniper ICMP RPM ping");
+   run_test(test_icmp_timestamp, "responds to ICMP timestamp without junos RPM");
+   run_test(test_udp_cisco_init, "responds to Cisco UDP IP SLA initialization");
+   run_test(test_udp_cisco_jitter_type_2, "responds to Cisco UDP IP SLA jitter measurement (milliseconds)");
+   run_test(test_udp_cisco_jitter_type_3, "responds to Cisco UDP IP SLA jitter measurement (microseconds)");
+   run_test(test_udp_junos_rpm, "responds to juniper UDP RPM ping");
    printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
 
    return EXIT_SUCCESS;
