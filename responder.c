@@ -245,7 +245,7 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
    uint16_t tmp;
 
    if (debuglevel) {
-     printf("Received %lu bytes\n", plen);
+     printf("Received %lu bytes to udp/%u\n", plen, ntohs(*(uint16_t*)(bytes+UDP_DPORT)));
      bin2hex(bytes, plen);
    }
 
@@ -262,11 +262,13 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          *(uint16_t*)(bytes+IP_O_TOT_LEN) = 0x3400; // htons(52) 
          *(uint16_t*)(bytes+UDP_LEN) = 0x2000; //  htons(32)
          plen = UDP_DATA+24;
-
          // change to something 8 zeros
          bytes[UDP_DATA+0x3] = 0x08;
          memset(bytes+UDP_DATA+0x4, 0, 8); 
       } else {
+         if (debuglevel) {
+            printf("Ignored packet to udp/1967, did not contain cisco ipsla init\n");
+         }
          return; // ignore this
       }
    // juniper RPM uses port 7 for udp-ping
@@ -314,9 +316,15 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
          // fill out some cisco specific cruft
          memcpy(bytes+0x52, "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00", 11);
       } else {
+         if (debuglevel) {
+            printf("Ignored packet to udp/%u, did not contain cisco ipsla\n", ntohs(dest_udp_ip_sla));
+         }              
          return; 
       }
    } else {
+      if (debuglevel) {
+        printf("Ignored packet to udp/%u, did not contain anything interesting (udplen %lu)\n", ntohs(*(uint16_t*)(bytes+UDP_DPORT)), plen - UDP_DATA);
+      }
       return; // do not process
    }
 
@@ -372,24 +380,38 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    if (*(uint16_t*)(bytes+ICMP_START) == 8) { // icmp echo
      // this is simple ping, change it to response.
      *(uint32_t*)(bytes+ICMP_START) = 0;
-   } else if (*(uint16_t*)(bytes+ICMP_START) == 0x000d && plen > 90 &&
-       *(uint16_t*)(bytes+ICMP_DATA+0x1c) == 0x0100 &&
-       *(uint16_t*)(bytes+ICMP_DATA+0x1e) == 0x1096) {
-      // this is a juniper RPM format. we need to put here the recv/trans stamp too
-      uint32_t usec,sent;
-      // fill in received timestamp
-      *(uint32_t*)(bytes+ICMP_DATA+0x4) = recv;
-      // juniper uses uptime as epoch, we use something similar
-      clock_gettime(CLOCK_MONOTONIC, &res); 
-      // put it in place
-      *(uint32_t*)(bytes+ICMP_DATA+0x24) = htonl(res.tv_sec);
-      *(uint32_t*)(bytes+ICMP_DATA+0x28) = htonl(res.tv_nsec/1000);
-      // add transmit ts
-      clock_gettime(CLOCK_REALTIME, &res);
-      sent = get_ts_utc(&res);
-      *(uint32_t*)(bytes+ICMP_DATA+0x08) = sent;
-      // change to response
-      bytes[ICMP_START] = 0x0e;
+   } else if (*(uint16_t*)(bytes+ICMP_START) == 0x000d) { // icmp timestamp
+       if (plen > 90 &&
+           *(uint16_t*)(bytes+ICMP_DATA+0x1c) == 0x0100 &&
+           *(uint16_t*)(bytes+ICMP_DATA+0x1e) == 0x1096) {
+           // this is a juniper RPM format. we need to put here the recv/trans stamp too
+           uint32_t usec,sent;
+           // fill in received timestamp
+           *(uint32_t*)(bytes+ICMP_DATA+0x4) = recv;
+           // juniper uses uptime as epoch, we use something similar
+           clock_gettime(CLOCK_MONOTONIC, &res); 
+           // put it in place
+           *(uint32_t*)(bytes+ICMP_DATA+0x24) = htonl(res.tv_sec);
+           *(uint32_t*)(bytes+ICMP_DATA+0x28) = htonl(res.tv_nsec/1000);
+           // add transmit ts
+           clock_gettime(CLOCK_REALTIME, &res);
+           sent = get_ts_utc(&res);
+           *(uint32_t*)(bytes+ICMP_DATA+0x08) = sent;
+           // change to response
+           bytes[ICMP_START] = 0x0e;
+       } else {
+           // handle as normal icmp timestamp request
+           // fill in received and sent stamps
+           // which should really be the same
+           // but, well, maybe we got slow rtc?
+           uint32_t sent;
+           *(uint32_t*)(bytes+ICMP_DATA+0x4) = recv;
+           clock_gettime(CLOCK_REALTIME, &res);
+           sent = get_ts_utc(&res);
+           *(uint32_t*)(bytes+ICMP_DATA+0x08) = sent;
+           // change to response
+           bytes[ICMP_START] = 0x0e;
+       }
    } else {
       return; // do not process
    }
