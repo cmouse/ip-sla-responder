@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html>
+<html lang="en" xml:lang="en">
  <head>
   <title>IP SLA responder</title>
   <link rel="stylesheet" type="text/css" href="style.css" />
@@ -18,7 +18,6 @@
   <script type="text/javascript" src="application.js"></script>
   <script type="text/javascript" src="js/bootstrap.min.js"></script>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-  <meta http-equiv="Content-Language" content="en" />
  </head>
 
  <body>
@@ -41,7 +40,6 @@
         <div class="span3">
           <div class="well sidebar-nav">
             <ul class="nav nav-list">
-              <li class="nav-header">Sidebar</li>
               <li><a href="index.html">Home</a></li>
               <li><a href="testimonials.html">Testimonials</a></li>
               <li><a href="download.html">Download</a></li>
@@ -50,20 +48,50 @@
           </div><!--/.well -->
         </div><!--/span-->
         <div class="span9">
-            <h1>IP SLA is faster</h1>
+          <div class="hero-unit">
+            <h1>IP SLA is faster than ASR1k</h1>
 <p>
- Here are some graphs supplied by a happy user. From the graphs you can see how the values change just before 12:00. 
+The user was running responder with Cisco ASR1k with about 900 nodes. CPU usage was 100% and the ASR1k was dropping about half the packets. 
 </p>
-            <p>
+<p>
+With IP SLA responder, the server is running at mere 2% CPU load and you can see from the graphs that the results are better as well. Jitter may seem worse at first glance, but if you look carefully high and low values are same, they just appear more often, because you have more jitter samples, due to non-congested responder. The improvement can be observed at the right end of the graphs, just before 12:00.
+</p>
+    </div><!--/hero-->
+   </div><!--/span-->
+   <div class="row-fluid">
+    <div class="span4">
+<p>
 <img src="img/ipsla-example/average_jitter.png" alt="average_jitter" />
+</p>
+    </div>
+    <div class="span4">
+<p>
 <img src="img/ipsla-example/icpif.png" alt="icpif" />
-<img src="img/ipsla-example/max_jitter.png" alt="max_jitter" />
-<img src="img/ipsla-example/mos.png" alt="mos" />
-<img src="img/ipsla-example/packet_loss.png" alt="packet_loss" />
-<img src="img/ipsla-example/rtt.png" alt="rtt" />
-            </p>
-             
-         </div><!--/hero-->
+</p>
+    </div>
+    <div class="span4">
+<p>
+    <img src="img/ipsla-example/max_jitter.png" alt="max_jitter" />
+</p>
+    </div>
+   </div><!--/row-->
+   <div class="row-fluid">
+    <div class="span4">
+<p>
+     <img src="img/ipsla-example/mos.png" alt="mos" />
+</p>
+    </div>
+    <div class="span4">
+<p>
+     <img src="img/ipsla-example/packet_loss.png" alt="packet_loss" />
+</p>
+    </div>
+    <div class="span4">
+<p>
+     <img src="img/ipsla-example/rtt.png" alt="rtt" />
+</p>
+    </div>
+   </div><!--/row-->
 
 
        </div><!--/row-->
