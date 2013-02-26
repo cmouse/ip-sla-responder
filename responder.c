@@ -191,7 +191,7 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
 
    if (debuglevel) {
      printf("Received %lu bytes\n", plen);
-     bin2hex(bytes, plen);
+     if (debuglevel>1) bin2hex(bytes, plen);
    }
 
     if (*(uint16_t*)(bytes+ARP_START)!=0x0100 ||     // hwtype ethernet
@@ -223,7 +223,7 @@ void process_and_send_arp(int fd, u_char *bytes, size_t plen) {
     }
     if (debuglevel) {
       printf("Sent %lu arp bytes\n", plen);
-      bin2hex(bytes, plen);
+      if (debuglevel>1) bin2hex(bytes, plen);
     }
 }
 
@@ -246,7 +246,7 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
 
    if (debuglevel) {
      printf("Received %lu bytes to udp/%u\n", plen, ntohs(*(uint16_t*)(bytes+UDP_DPORT)));
-     bin2hex(bytes, plen);
+     if (debuglevel>1) bin2hex(bytes, plen);
    }
 
    swapmac(bytes);
@@ -349,7 +349,7 @@ void process_and_send_udp(int fd, u_char *bytes, size_t plen) {
    }
    if (debuglevel) {
       printf("Sent %lu udp bytes\n", plen);
-      bin2hex(bytes, plen);
+      if (debuglevel>1) bin2hex(bytes, plen);
    }
 }
 
@@ -370,7 +370,7 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
 
    if (debuglevel) {
      printf("Received %lu bytes\n", plen);
-     bin2hex(bytes, plen);
+     if (debuglevel>1) bin2hex(bytes, plen);
    }
 
    swapmac(bytes);
@@ -427,7 +427,7 @@ void process_and_send_icmp(int fd, u_char *bytes, size_t plen) {
    }
    if (debuglevel) {
       printf("Sent %lu icmp bytes\n", plen);
-      bin2hex(bytes, plen);
+      if (debuglevel>1) bin2hex(bytes, plen);
    }
 }
 
@@ -454,16 +454,12 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 
    // check if this is intended for us in the first place
    if (memcmp(bytes, dest_mac, ETH_ALEN) && memcmp(bytes, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) {
-        if (debuglevel) 
-           printf("Ignoring pak not intended for us (mac mismatch and not broadcast)\n");
 	return;
    }
 
 #ifdef HAS_VLAN
    // require vlan
    if (*(unsigned short*)(bytes+ETH_O_PROTO) != 0x0081) { 
-        if (debuglevel)
-           printf("Ignoring pak because it has no VLAN and VLAN is required\n");
 	return;
    }
 #endif

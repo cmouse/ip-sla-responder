@@ -73,7 +73,7 @@ int getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char 
          printf("\t-i ip   \t IP address to listen on (defaults to 192.168.0.1) \r\n");
          printf("\t-m mac  \t MAC address for IP (uses interface's if empty)\r\n");
          printf("\t-I if   \t Interface to listen on (defaults to first non-loopback interface)\r\n");
-         printf("\t-l level\t Message level (0-1, defaults to 0)\r\n");
+         printf("\t-v level\t Message level (0-1, defaults to 0)\r\n");
          printf("\t-p port \t UDP port for Cisco IP SLA (default 50505)\r\n");
          printf("\n");
          return EXIT_FAILURE;
