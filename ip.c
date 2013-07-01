@@ -38,7 +38,7 @@ int process_ip(u_char *buffer, size_t length, struct config_s *config) {
   switch(*(uint8_t*)(buffer + IP_O_PROTO)) {
   case 0x1:
     // icmp
-    if (process_icmp(buffer, length, config, ip_start)) return -1;
+    if (process_icmp4(buffer, length, config, ip_start)) return -1;
     break;
   case 0x11:
     // udp 

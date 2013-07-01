@@ -23,10 +23,12 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "responder.h"
 
-int process_icmp(u_char *buffer, size_t length, struct config_s *config, size_t ip_start) {
+int process_icmp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start) {
    uint32_t tmp,recv;
    struct timespec res;
+   size_t plen;
 
+   plen = ntohs(*(uint16_t*)(buffer + IP_O_TOT_LEN)) - 20;
    recv = get_ts_utc(&config->res0);
 
    // check for ICMP type
@@ -71,7 +73,7 @@ int process_icmp(u_char *buffer, size_t length, struct config_s *config, size_t 
 
    // recalculate checksums
    *(uint16_t*)(buffer+ICMP_START+2)=0;
-   ip_checksum(buffer+ICMP_START, length - ICMP_START, (uint16_t*)(buffer+ICMP_START+2)); 
+   ip_checksum(buffer+ICMP_START, plen, (uint16_t*)(buffer+ICMP_START+2)); 
 
    return 0;
 }

@@ -93,7 +93,7 @@ int process_arp(u_char *buffer, size_t length, struct config_s *config);
 int process_ip(u_char *buffer, size_t length, struct config_s *config);
 int process_ip6(u_char *buffer, size_t length, struct config_s *config);
 int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
-int process_icmp(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_icmp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 int process_echo4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 

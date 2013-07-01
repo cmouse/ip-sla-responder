@@ -41,10 +41,12 @@ int process_ether(u_char *buffer, size_t length, int *af, struct config_s *confi
    if (memcmp(buffer + ETH_O_DEST, config->mac, ETH_ALEN) &&
        memcmp(buffer + ETH_O_DEST, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) return -1; // broadcast case
 
-   if (config->vlan && *(uint16_t*)(buffer+ETH_O_PROTO) != 0x0081) return -1;
+   *af = *(uint16_t*)(buffer+ETH_O_PROTO);
 
-   swapmac(buffer);
-   switch((*af = *(uint16_t*)(buffer+ETH_O_PROTO+ETH_O_VLAN))) {
+   if (config->vlan && *af != 0x0081) return -1;
+   else if (config->vlan) *af = *(uint16_t*)(buffer+ETH_O_PROTO+ETH_O_VLAN);
+
+   switch(*af) {
    case 0x0608: 
    case 0x0008:
    case 0xdd86:
@@ -54,5 +56,7 @@ int process_ether(u_char *buffer, size_t length, int *af, struct config_s *confi
       printf("Packet with %04x AF\n", *af);
       return -1;
    }
+
+   swapmac(buffer);
    return 0;
 }
