@@ -1,8 +1,8 @@
 CC=gcc
-CFLAGS=-W -Wall -Wno-unused -g -O0 -mtune=native -march=native -DHAS_VLAN=1
+CFLAGS=-W -Wall -Wno-unused -g -O0
 LD=gcc
 LDFLAGS=-g
-OBJECTS=pak.o ether.o ip.o ip6.o icmp.o arp.o nd.o udp4.o junos.o cisco.o utils.o
+OBJECTS=pak.o ether.o ip.o ip6.o icmp4.o arp.o nd.o udp4.o junos.o cisco.o utils.o
 BINARIES=responder
 LIBS=-lrt -lpcap
 
@@ -14,7 +14,7 @@ responder: $(OBJECTS) main.o
 	$(LD) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJECTS) main.o $(LIBS)
 
 responder-test: $(OBJECTS) test-main.o
-	$(LD) $(LDFLAGS) $(CFLAGS) -o $@ -Wl,--wrap,send responder-test.c responder.c $(LIBS)
+	$(LD) $(LDFLAGS) $(CFLAGS) -o $@ $(OBJECTS) test-main.o $(LIBS)
 
 test: responder-test
 	./$<
