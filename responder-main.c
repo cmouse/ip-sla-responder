@@ -1,4 +1,4 @@
-#include "responder.c"
+#include "responder.h"
 
 /**
  * getopt_responder(int argc, char * const argv[], uint32_t *ip, unsigned char *mac, int *verbose, 

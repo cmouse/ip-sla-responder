@@ -1,4 +1,5 @@
 /**
+
 Copyright (c) 2012, Aki Tuomi <cmouse@cmouse.fi>
 All rights reserved.
 
@@ -26,64 +27,13 @@ OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 */
  
-#include <stdio.h>
-#include <stdlib.h>
-#include <sys/socket.h>
-#include <net/ethernet.h> 
-#include <arpa/inet.h>
-#include <unistd.h>
-#include <string.h>
-#include <sys/ioctl.h>
-#include <net/if.h>
-#include <pcap/pcap.h>
-#include <arpa/inet.h>
-#include <netinet/ip_icmp.h>
-#include <netpacket/packet.h>
-#include <time.h>
-
-#define ETH_O_DEST 0
-#define ETH_O_SOURCE 6
-#define ETH_O_PROTO 12
-
-#ifdef HAS_VLAN
-#define ETH_O_VLAN 4
-#else
-#define ETH_O_VLAN 0
-#endif
-
-#define IP_MAGIC 45
-
-#define IP_START (ETH_HLEN+ETH_O_VLAN)
-#define IP_O_TOS (IP_START+1)
-#define IP_O_TOT_LEN (IP_START+2)
-#define IP_O_ID (IP_START+4)
-#define IP_O_FRAG_OFF (IP_START+6)
-#define IP_O_TTL (IP_START+8)
-#define IP_O_PROTO (IP_START+9)
-#define IP_O_CHKSUM (IP_START+10)
-#define IP_O_SADDR (IP_START+12)
-#define IP_O_DADDR (IP_START+16)
-
-#define ICMP_START (IP_START+20)
-#define ICMP_DATA (ICMP_START+8)
-
-#define UDP_START (IP_START+20)
-#define UDP_SPORT (UDP_START)
-#define UDP_DPORT (UDP_START+2)
-#define UDP_LEN (UDP_START+4)
-#define UDP_CHECKSUM (UDP_START+6)
-#define UDP_DATA (UDP_START+8)
-
-#define ARP_START (ETH_HLEN+4)
-
-#define DEFAULT_IP_ADDR "192.168.0.2"
-#define DEFAULT_IPSLA_PORT 50505
+#include "responder.h"
 
 struct timespec res0;
-static uint32_t dest_ip;
-static uint16_t dest_udp_ip_sla;
-static u_char dest_mac[ETH_ALEN];
-static int debuglevel;
+uint32_t dest_ip = 0;
+uint16_t dest_udp_ip_sla = 0;
+u_char dest_mac[ETH_ALEN] = {0};
+int debuglevel = 0;
 
 const unsigned long NTP_EPOCH = 2208988800UL;
 const unsigned long NTP_SCALE_FRAC = 4294967296UL;
