@@ -45,9 +45,24 @@ int main(int argc, char * const argv[]) {
    pcap_t *p;
 
    memcpy(config.mac, "\xd0\xd0\xfd\x09\x34\x2d", ETH_ALEN);
+   
    inet_pton(AF_INET, "195.10.131.29", &config.ip_addr); 
+   inet_pton(AF_INET6, "2001:6E8:280::1:342d", &config.ip6_addr);
+   
+   memcpy(config.mac6, "\x33\x33\xff\x00\x00\x00", ETH_ALEN);
+   memcpy(config.mac6 + 3, config.ip6_addr.s6_addr + 13, 3);
+ 
+   // use our MAC 
+   memcpy(config.link6_addr.s6_addr, "\xfe\x80\x00\x00\x00\x00\x00\x00\x00\x00\x00\xff\xfe\x00\x00\x00", 16);
+   memcpy(config.link6_addr.s6_addr + 8, config.mac, 3);
+   memcpy(config.link6_addr.s6_addr + 13, config.mac + 3, 3);
+   // create multicast address
+   memcpy(config.mc6_addr.s6_addr, "\xff\x02\x00\x00\x00\x00\x00\x00\x00\x00\x00\x01\xff\x00\x00\x00\x00", 16);
+   memcpy(config.mc6_addr.s6_addr + 13, config.ip6_addr.s6_addr + 13, 3);
+
    config.vlan = 1;
    config.debuglevel = 2;
+   config.cisco_port = 50505;
 
    fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
    memset(&ifr,0,sizeof ifr);

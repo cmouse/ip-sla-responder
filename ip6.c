@@ -24,5 +24,35 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "responder.h"
 
 int process_ip6(u_char *buffer, size_t length, struct config_s *config) {
-  return -1;
+  u_char tmp[16];
+  char addr[200];
+
+  size_t ip6_start = IP6_START;
+  if (config->vlan) ip6_start += ETH_O_VLAN;
+  
+  // check for IPv6
+  if ((buffer[ip6_start] & 0xF0) != 0x60) return -1;
+  
+  // check if it's for us
+  if (memcmp(buffer + IP6_O_DADDR, config->ip6_addr.s6_addr, 16) &&
+      memcmp(buffer + IP6_O_DADDR, config->link6_addr.s6_addr, 16) &&
+      memcmp(buffer + IP6_O_DADDR, config->mc6_addr.s6_addr, 16)) return -1;
+
+  // choose protocol
+  switch(buffer[IP6_O_NH]) {
+  case 0x3A: 
+    if (process_icmp6(buffer, length, config, ip6_start)) return -1;
+    break;
+  default:
+    printf("Ignoring IPv6 protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP6_O_NH), IP6_O_NH);
+    return -1;
+  }
+
+  // swap IP addresses
+  memcpy(tmp, buffer + IP6_O_SADDR, 16);
+  memmove(buffer + IP6_O_SADDR, buffer + IP6_O_DADDR, 16);
+  memcpy(buffer + IP6_O_DADDR, tmp, 16); 
+
+  // ipv6 has no checksum on ip header
+  return 0;
 }

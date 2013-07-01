@@ -34,6 +34,13 @@
 #define IP_O_SADDR (ip_start+12)
 #define IP_O_DADDR (ip_start+16)
 
+#define IP6_START (ETH_HLEN)
+#define IP6_O_LEN (ip6_start + 4)
+#define IP6_O_NH (ip6_start + 6)
+#define IP6_O_HL (ip6_start + 7)
+#define IP6_O_SADDR (ip6_start + 8)
+#define IP6_O_DADDR (ip6_start + 24)
+
 #define ICMP_START (ip_start+20)
 #define ICMP_DATA (ICMP_START+8)
 
@@ -48,9 +55,12 @@
 
 struct config_s {
    unsigned char mac[ETH_ALEN]; /* our mac address */
+   unsigned char mac6[ETH_ALEN]; /* our multicast v6 mac */
    int vlan;                    /* VLAN number, 0 = no vlan support wanted */
    struct in_addr ip_addr;      /* our IPv4 address */
    struct in6_addr ip6_addr;    /* our IPv6 address */
+   struct in6_addr link6_addr;  /* link-local address */
+   struct in6_addr mc6_addr;    /* multicast address */
    size_t iflen;
    char *ifnames;               /* names of interface to use */
    int debuglevel;              /* 0 = no, 1 = yes, 2 = with dumps */
@@ -69,6 +79,8 @@ inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *n
 void bin2hex(const unsigned char *data, size_t dlen);
 inline uint16_t ip_checksum(const unsigned char *buffer, size_t dlen, uint16_t *target);
 inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target);
+inline uint16_t icmp6_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target);
+
 inline void swapmac(u_char *bytes);
 inline void swapip(u_char *bytes);
 void bin2hex(const unsigned char *data, size_t dlen);
@@ -94,6 +106,7 @@ int process_ip(u_char *buffer, size_t length, struct config_s *config);
 int process_ip6(u_char *buffer, size_t length, struct config_s *config);
 int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 int process_icmp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_icmp6(u_char *buffer, size_t length, struct config_s *config, size_t ip6_start);
 int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 int process_echo4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 

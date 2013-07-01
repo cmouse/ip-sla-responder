@@ -32,14 +32,17 @@ inline void swapmac(u_char *bytes) {
 
 int process_ether(u_char *buffer, size_t length, int *af, struct config_s *config)
 {
-   // determine if this message was intended for us
-/*   printf("MAC check (got %02x:%02x:%02x:%02x:%02x:%02x) wanted (%02x:%02x:%02x:%02x:%02x:%02x)\n", 
-      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5],
-      config->mac[0], config->mac[1], config->mac[2], config->mac[3],
-      config->mac[4], config->mac[5]); */
-
    if (memcmp(buffer + ETH_O_DEST, config->mac, ETH_ALEN) &&
-       memcmp(buffer + ETH_O_DEST, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) return -1; // broadcast case
+       memcmp(buffer + ETH_O_DEST, config->mac6, ETH_ALEN) &&
+       memcmp(buffer + ETH_O_DEST, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) {
+
+     if (buffer[0] != 0x88) 
+   printf("MAC check (got %02x:%02x:%02x:%02x:%02x:%02x) wanted (%02x:%02x:%02x:%02x:%02x:%02x)\n",
+      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5],
+      config->mac6[0], config->mac6[1], config->mac6[2], config->mac6[3],
+      config->mac6[4], config->mac6[5]);
+      return -1;
+   }
 
    *af = *(uint16_t*)(buffer+ETH_O_PROTO);
 
@@ -59,4 +62,5 @@ int process_ether(u_char *buffer, size_t length, int *af, struct config_s *confi
 
    swapmac(buffer);
    return 0;
+
 }
