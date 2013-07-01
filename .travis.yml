@@ -3,7 +3,7 @@ compiler:
   - gcc
 before_script:
  - sudo apt-get update
- - sudo apt-get install 
+ - sudo apt-get install libpcap-dev
 script:
  - make
  - make check
