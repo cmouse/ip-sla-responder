@@ -19,40 +19,32 @@
 #define ETH_O_DEST 0
 #define ETH_O_SOURCE 6
 #define ETH_O_PROTO 12
-
-#ifdef HAS_VLAN
 #define ETH_O_VLAN 4
-#else
-#define ETH_O_VLAN 0
-#endif
 
-#define IP_MAGIC 45
+#define IP_MAGIC 0x45
 
-#define IP_START (ETH_HLEN+ETH_O_VLAN)
-#define IP_O_TOS (IP_START+1)
-#define IP_O_TOT_LEN (IP_START+2)
-#define IP_O_ID (IP_START+4)
-#define IP_O_FRAG_OFF (IP_START+6)
-#define IP_O_TTL (IP_START+8)
-#define IP_O_PROTO (IP_START+9)
-#define IP_O_CHKSUM (IP_START+10)
-#define IP_O_SADDR (IP_START+12)
-#define IP_O_DADDR (IP_START+16)
+#define IP_START (ETH_HLEN)
+#define IP_O_TOS (ip_start+1)
+#define IP_O_TOT_LEN (ip_start+2)
+#define IP_O_ID (ip_start+4)
+#define IP_O_FRAG_OFF (ip_start+6)
+#define IP_O_TTL (ip_start+8)
+#define IP_O_PROTO (ip_start+9)
+#define IP_O_CHKSUM (ip_start+10)
+#define IP_O_SADDR (ip_start+12)
+#define IP_O_DADDR (ip_start+16)
 
-#define ICMP_START (IP_START+20)
+#define ICMP_START (ip_start+20)
 #define ICMP_DATA (ICMP_START+8)
 
-#define UDP_START (IP_START+20)
+#define UDP_START (ip_start+20)
 #define UDP_SPORT (UDP_START)
 #define UDP_DPORT (UDP_START+2)
 #define UDP_LEN (UDP_START+4)
 #define UDP_CHECKSUM (UDP_START+6)
 #define UDP_DATA (UDP_START+8)
 
-#define ARP_START (ETH_HLEN+4)
-
-#define DEFAULT_IP_ADDR "192.168.0.2"
-#define DEFAULT_IPSLA_PORT 50505
+#define ARP_START (ETH_HLEN)
 
 struct config_s {
    unsigned char mac[ETH_ALEN]; /* our mac address */
@@ -61,15 +53,25 @@ struct config_s {
    struct in6_addr ip6_addr;    /* our IPv6 address */
    size_t iflen;
    char *ifnames;               /* names of interface to use */
+   int debuglevel;              /* 0 = no, 1 = yes, 2 = with dumps */
+   struct timespec res0;        /* receive timestamp */ 
+   uint16_t cisco_port;         /* Port to listen for Cisco IPSLA */
+   size_t plen;                 /* actual length of packet */
+};
+
+struct pak_handler_s {
+  struct config_s *config;
+  int fd;
 };
 
 inline uint32_t get_ts_utc(struct timespec *res);
 inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec);
 void bin2hex(const unsigned char *data, size_t dlen);
-inline uint16_t ip_checksum(const void *vdata, size_t dlen, uint16_t *target);
+inline uint16_t ip_checksum(const unsigned char *buffer, size_t dlen, uint16_t *target);
 inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target);
 inline void swapmac(u_char *bytes);
 inline void swapip(u_char *bytes);
+void bin2hex(const unsigned char *data, size_t dlen);
 
 /*
 void process_and_send_arp(int fd, u_char *bytes, size_t plen);
@@ -84,6 +86,16 @@ extern int debuglevel;
 */
 
 // NEW API
-int process_ether(u_char *buffer, size_t length, int *af, const struct config_s *config);
 
+void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes);
+int process_ether(u_char *buffer, size_t length, int *af, struct config_s *config);
+int process_arp(u_char *buffer, size_t length, struct config_s *config);
+int process_ip(u_char *buffer, size_t length, struct config_s *config);
+int process_ip6(u_char *buffer, size_t length, struct config_s *config);
+int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_icmp(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_echo4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+
+void do_send(int fd, u_char *bytes, size_t plen);
 #endif

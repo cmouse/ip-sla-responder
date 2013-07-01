@@ -1,8 +1,8 @@
-CC=ccache gcc
+CC=gcc
 CFLAGS=-W -Wall -Wno-unused -g -O0 -mtune=native -march=native -DHAS_VLAN=1
-LD=ccache gcc
+LD=gcc
 LDFLAGS=-g
-OBJECTS=ether.o ip.o ip6.o icmp.o arp.o nd.o junos.o cisco.o
+OBJECTS=pak.o ether.o ip.o ip6.o icmp.o arp.o nd.o udp4.o junos.o cisco.o utils.o
 BINARIES=responder
 LIBS=-lrt -lpcap
 

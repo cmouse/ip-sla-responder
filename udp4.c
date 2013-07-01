@@ -23,37 +23,15 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "responder.h"
 
-int process_ip(u_char *buffer, size_t length, struct config_s *config) {
-  // ensure we have IP
-  uint32_t tmp;
-  
-  size_t ip_start = IP_START;
-  if (config->vlan) ip_start += ETH_O_VLAN;
-  if (buffer[ip_start] != IP_MAGIC) return -1;
-  
-  // targeted to us?
-  if (*(uint32_t*)(buffer + IP_O_DADDR) != config->ip_addr.s_addr) return -1;
+   
+int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start) {
+   if (process_cisco4(buffer, length, config, ip_start) && 
+       process_echo4(buffer, length, config, ip_start)) return -1;
 
-  // determine protocol
-  switch(*(uint8_t*)(buffer + IP_O_PROTO)) {
-  case 0x1:
-    // icmp
-    if (process_icmp(buffer, length, config, ip_start)) return -1;
-    break;
-  case 0x11:
-    // udp 
-    if (process_udp4(buffer, length, config, ip_start)) return -1;
-    break;
-  default:
-    printf("Ignoring IP protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP_O_PROTO), IP_O_PROTO);
-    return -1;
-  }
+   *(uint16_t*)(buffer+UDP_CHECKSUM) = 0;
+   tcp_checksum(buffer+IP_O_SADDR, buffer+IP_O_DADDR, buffer+UDP_START, ntohs(*(uint16_t*)(buffer+UDP_LEN)), (uint16_t*)(buffer+UDP_CHECKSUM));
+   if (*(uint16_t*)(buffer+UDP_CHECKSUM) == 0)
+     *(uint16_t*)(buffer+UDP_CHECKSUM) = 0xffff; 
 
-  tmp = *(uint32_t*)(buffer+IP_O_SADDR);
-  *(uint32_t*)(buffer+IP_O_SADDR) = *(uint32_t*)(buffer+IP_O_DADDR);
-  *(uint32_t*)(buffer+IP_O_DADDR) = tmp;
-  *(uint16_t*)(buffer+IP_O_CHKSUM)=0;
-  ip_checksum(buffer+ip_start, 20, (uint16_t*)(buffer+IP_O_CHKSUM));
-
-  return 0;
+   return 0;
 }

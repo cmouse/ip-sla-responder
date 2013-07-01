@@ -21,3 +21,8 @@ TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
 SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 **/
 
+#include "responder.h"
+
+int process_ip6(u_char *buffer, size_t length, struct config_s *config) {
+  return -1;
+}

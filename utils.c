@@ -24,11 +24,10 @@ void bin2hex(const unsigned char *data, size_t dlen) {
    printf("\n");
 }
 
-inline uint16_t ip_checksum(const void *vdata, size_t dlen, uint16_t *target) {
+inline uint16_t ip_checksum(const unsigned char *buff, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
-   const unsigned char *buff = (const unsigned char *)vdata;
 
    // make 16 bit words out of every two adjacent 8 bit words in the packet
    // and add them up

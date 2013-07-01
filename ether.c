@@ -30,19 +30,28 @@ inline void swapmac(u_char *bytes) {
    memcpy(bytes+ETH_ALEN, etmp, ETH_ALEN);
 }
 
-int process_ether(u_char *buffer, size_t length, int *af, const struct config_s *config)
+int process_ether(u_char *buffer, size_t length, int *af, struct config_s *config)
 {
    // determine if this message was intended for us
-   if (memcpy(buffer + ETH_O_DEST, config->mac, ETH_ALEN)) return -1; 
-   if (config->vlan && *(uint16_t*)(buffer+ETH_HLEN) != ETHERTYPE_VLAN) return -1;
+/*   printf("MAC check (got %02x:%02x:%02x:%02x:%02x:%02x) wanted (%02x:%02x:%02x:%02x:%02x:%02x)\n", 
+      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5],
+      config->mac[0], config->mac[1], config->mac[2], config->mac[3],
+      config->mac[4], config->mac[5]); */
+
+   if (memcmp(buffer + ETH_O_DEST, config->mac, ETH_ALEN) &&
+       memcmp(buffer + ETH_O_DEST, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) return -1; // broadcast case
+
+   if (config->vlan && *(uint16_t*)(buffer+ETH_O_PROTO) != 0x0081) return -1;
+
    swapmac(buffer);
-   switch((*af = *(uint16_t*)(buffer+ETH_HLEN+ETH_O_VLAN))) {
+   switch((*af = *(uint16_t*)(buffer+ETH_O_PROTO+ETH_O_VLAN))) {
    case 0x0608: 
    case 0x0008:
    case 0xdd86:
       *af = ntohs(*af);
       break;
    default:
+      printf("Packet with %04x AF\n", *af);
       return -1;
    }
    return 0;

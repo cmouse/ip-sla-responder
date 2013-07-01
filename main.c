@@ -23,23 +23,14 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "responder.h"
 
-struct pak_handler_s {
-  const struct config_s *config;
-  int fd;
-};
-
-void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes) {
-  u_char response[ETH_FRAME_LEN+1];
-  int af;
-  size_t plen;
-  const struct pak_handler_s *pak_config = (struct pak_handler_s*)user;
-
-  plen = (h->caplen > 1500 ? 1500 : h->caplen);
-  memcpy(response, bytes, plen);
-  if (process_ether(response, plen, &af, pak_config->config)) return; // ignore
+void do_send(int fd, u_char *bytes, size_t plen)
+{
+   if (send(fd, bytes, plen, 0)<0) {
+      perror("send");
+   }
 }
 
- /**
+/**
  * main(int argc, char * const argv[])
  *
  * program entry point
@@ -47,12 +38,31 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 int main(int argc, char * const argv[]) {
    struct config_s config;
    char errbuf[PCAP_ERRBUF_SIZE];
+   struct ifreq ifr;
+   struct sockaddr_ll sa;
    int fd = 0;
    int runcond=1;
    pcap_t *p;
 
+   memcpy(config.mac, "\xd0\xd0\xfd\x09\x34\x2d", ETH_ALEN);
+   inet_pton(AF_INET, "195.10.131.29", &config.ip_addr); 
+   config.vlan = 1;
+   config.debuglevel = 2;
+
+   fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
+   memset(&ifr,0,sizeof ifr);
+   strncpy(ifr.ifr_name, "eth1", IFNAMSIZ);
+   ioctl(fd, SIOCGIFINDEX, &ifr);
+   memset(&sa,0,sizeof sa);
+
+   // bind our packet if to interface
+   sa.sll_family = AF_PACKET;
+   sa.sll_ifindex = ifr.ifr_ifindex;
+   sa.sll_protocol = htons(ETH_P_ALL);
+   bind(fd, (struct sockaddr*)&sa, sizeof sa);  
+
    // initialize pcap
-   p = pcap_create("eth0", errbuf);
+   p = pcap_create("eth1", errbuf);
    if (pcap_set_snaplen(p, 65535)) {
      pcap_perror(p, "pcap_set_snaplen");
      exit(1);
