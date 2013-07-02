@@ -68,12 +68,13 @@ struct config_s {
    struct in6_addr ip6_addr;    /* our IPv6 address */
    struct in6_addr link6_addr;  /* link-local address */
    struct in6_addr mc6_addr;    /* multicast address */
-   size_t iflen;
-   char *ifnames;               /* names of interface to use */
+   char ifname[IFNAMSIZ];       /* name of interface to use */
    int debuglevel;              /* 0 = no, 1 = yes, 2 = with dumps */
    struct timespec res0;        /* receive timestamp */ 
    uint16_t cisco_port;         /* Port to listen for Cisco IPSLA */
    size_t plen;                 /* actual length of packet */
+   int do_ip4;
+   int do_ip6;
 };
 
 struct pak_handler_s {

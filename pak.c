@@ -41,13 +41,13 @@ void pak_handler(u_char *user, const struct pcap_pkthdr *h, const u_char *bytes)
 
   switch(af) {
   case ETHERTYPE_ARP:
-    if (process_arp(response, pak_config->config->plen, pak_config->config)) return; // ignore
+    if (!pak_config->config->do_ip4 || process_arp(response, pak_config->config->plen, pak_config->config)) return; // ignore
     break;
   case ETHERTYPE_IP:
-    if (process_ip(response, pak_config->config->plen, pak_config->config)) return; // ignore
+    if (!pak_config->config->do_ip4 || process_ip(response, pak_config->config->plen, pak_config->config)) return; // ignore
     break;
   case ETHERTYPE_IPV6:
-    if (process_ip6(response, pak_config->config->plen, pak_config->config)) return; // ignore
+    if (!pak_config->config->do_ip6 || process_ip6(response, pak_config->config->plen, pak_config->config)) return; // ignore
     break;
   }
 
