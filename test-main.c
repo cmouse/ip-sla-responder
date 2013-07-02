@@ -709,9 +709,9 @@ int main(int argc, char * const argv[]) {
 
    memcpy(config.mac, DEFAULT_DST_MAC, ETH_ALEN);
    inet_pton(AF_INET, DEFAULT_IP_ADDR, &config.ip_addr);
-   config.vlan = 1;
    config.debuglevel = 2;
    config.cisco_port = htons(DEFAULT_IPSLA_PORT);
+   config.do_ip4 = 1;
 
    tests_ok = tests_not_ok = 0;
    eth_o_vlan = 0;
