@@ -35,12 +35,6 @@ int process_ether(u_char *buffer, size_t length, int *af, struct config_s *confi
    if (memcmp(buffer + ETH_O_DEST, config->mac, ETH_ALEN) &&
        memcmp(buffer + ETH_O_DEST, config->mac6, ETH_ALEN) &&
        memcmp(buffer + ETH_O_DEST, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) {
-
-     if (buffer[0] != 0x88) 
-   printf("MAC check (got %02x:%02x:%02x:%02x:%02x:%02x) wanted (%02x:%02x:%02x:%02x:%02x:%02x)\n",
-      buffer[0], buffer[1], buffer[2], buffer[3], buffer[4], buffer[5],
-      config->mac6[0], config->mac6[1], config->mac6[2], config->mac6[3],
-      config->mac6[4], config->mac6[5]);
       return -1;
    }
 
@@ -56,7 +50,6 @@ int process_ether(u_char *buffer, size_t length, int *af, struct config_s *confi
       *af = ntohs(*af);
       break;
    default:
-      printf("Packet with %04x AF\n", *af);
       return -1;
    }
 

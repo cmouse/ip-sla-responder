@@ -52,7 +52,7 @@ int process_icmp6(u_char *buffer, size_t length, struct config_s *config, size_t
    };
 
    *(uint16_t*)(buffer + ICMP6_O_CHKSUM)=0;
-   icmp6_checksum(buffer + IP6_O_SADDR, buffer + IP6_O_DADDR, buffer + ICMP6_O_TYPE, plen, (uint16_t*)(buffer + ICMP6_O_CHKSUM)); 
+   tcp6_checksum(buffer + IP6_O_SADDR, buffer + IP6_O_DADDR, 0x3A, buffer + ICMP6_O_TYPE, plen, (uint16_t*)(buffer + ICMP6_O_CHKSUM)); 
 
    return 0;
 }

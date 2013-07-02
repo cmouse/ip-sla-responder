@@ -62,7 +62,7 @@ int main(int argc, char * const argv[]) {
 
    config.vlan = 1;
    config.debuglevel = 2;
-   config.cisco_port = 50505;
+   config.cisco_port = htons(50505);
 
    fd = socket(AF_PACKET, SOCK_RAW, htons(ETH_P_ALL));
    memset(&ifr,0,sizeof ifr);

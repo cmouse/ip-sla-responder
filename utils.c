@@ -48,7 +48,7 @@ inline uint16_t ip_checksum(const unsigned char *buff, size_t dlen, uint16_t *ta
    return *target;
 }
 
-inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target) {
+inline uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
@@ -69,7 +69,7 @@ inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_
      word16 =((dest_addr[i]<<8)&0xFF00)+(dest_addr[i+1]&0xFF);
      sum += (uint32_t)word16;
    }
-   sum = sum + 17 + dlen;
+   sum = sum + proto + dlen;
    sum = (sum & 0xffff)+(sum >> 16);
    sum += (sum >> 16);
    sum = ~sum;
@@ -77,33 +77,32 @@ inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_
    return *target;
 }
 
-inline uint16_t icmp6_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target) {
+inline uint16_t tcp6_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
    uint16_t pad;
 
    pad=dlen&1;
+   buff[dlen]=0; // this will work in this code...
 
    for (i=0;i<16;i=i+2){
      word16 =((src_addr[i]<<8)&0xFF00)+(src_addr[i+1]&0xFF);
      sum += (uint32_t)word16;
    }
-
    for (i=0;i<16;i=i+2){
      word16 =((dest_addr[i]<<8)&0xFF00)+(dest_addr[i+1]&0xFF);
      sum += (uint32_t)word16;
    }
 
-   sum += dlen;
-   sum += 0x3A; // ICMPv6
+   sum = sum + proto + dlen;
 
    for (i=0;i<dlen+pad;i=i+2){
      word16 =((buff[i]<<8)&0xff00)+(buff[i+1]&0xff);
      sum += (uint32_t)word16;
    }
 
-   sum = (sum & 0xFFFF)+(sum >> 16);
+   sum = (sum & 0xffff)+(sum >> 16);
    sum += (sum >> 16);
    sum = ~sum;
    (*target) = htons(((uint16_t)sum));

@@ -23,39 +23,20 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "responder.h"
 
-int process_ip6(u_char *buffer, size_t length, struct config_s *config) {
-  u_char tmp[16];
-  char addr[200];
+int process_udp6(u_char *buffer, size_t length, struct config_s *config, size_t ip6_start) {
+   uint16_t tmp;
 
-  size_t ip6_start = IP6_START;
-  if (config->vlan) ip6_start += ETH_O_VLAN;
-  
-  // check for IPv6
-  if ((buffer[ip6_start] & 0xF0) != 0x60) return -1;
-  
-  // check if it's for us
-  if (memcmp(buffer + IP6_O_DADDR, config->ip6_addr.s6_addr, 16) &&
-      memcmp(buffer + IP6_O_DADDR, config->link6_addr.s6_addr, 16) &&
-      memcmp(buffer + IP6_O_DADDR, config->mc6_addr.s6_addr, 16)) return -1;
+   if (process_cisco6(buffer, length, config, ip6_start) && 
+       process_echo6(buffer, length, config, ip6_start)) return -1;
 
-  // choose protocol
-  switch(buffer[IP6_O_NH]) {
-  case 0x3A: // icmpv6
-    if (process_icmp6(buffer, length, config, ip6_start)) return -1;
-    break;
-  case 0x11: // udp 
-    if (process_udp6(buffer, length, config, ip6_start)) return -1;
-    break;
-  default:
-    printf("Ignoring IPv6 protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP6_O_NH), IP6_O_NH);
-    return -1;
-  }
+   tmp = *(uint16_t*)(buffer + UDP6_O_DSTPORT);
+   *(uint16_t*)(buffer + UDP6_O_DSTPORT) = *(uint16_t*)(buffer + UDP6_O_SRCPORT);
+   *(uint16_t*)(buffer + UDP6_O_SRCPORT) = tmp;
 
-  // swap IP addresses
-  memcpy(tmp, buffer + IP6_O_SADDR, 16);
-  memmove(buffer + IP6_O_SADDR, buffer + IP6_O_DADDR, 16);
-  memcpy(buffer + IP6_O_DADDR, tmp, 16); 
+   *(uint16_t*)(buffer+UDP6_O_CHECKSUM) = 0;
+   tcp6_checksum(buffer+IP6_O_SADDR, buffer+IP6_O_DADDR, 0x11, buffer+UDP6_START, ntohs(*(uint16_t*)(buffer+UDP6_O_LEN)), (uint16_t*)(buffer+UDP6_O_CHECKSUM));
+   if (*(uint16_t*)(buffer+UDP6_O_CHECKSUM) == 0)
+     *(uint16_t*)(buffer+UDP6_O_CHECKSUM) = 0xffff; 
 
-  // ipv6 has no checksum on ip header
-  return 0;
+   return 0;
 }

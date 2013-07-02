@@ -25,13 +25,21 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
    
 int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start) {
+   uint16_t tmp;
+
    if (process_cisco4(buffer, length, config, ip_start) && 
        process_echo4(buffer, length, config, ip_start)) return -1;
 
+   // port swap
+   tmp = *(uint16_t*)(buffer + UDP_DPORT);
+   *(uint16_t*)(buffer + UDP_DPORT) = *(uint16_t*)(buffer + UDP_SPORT);
+   *(uint16_t*)(buffer + UDP_SPORT) = tmp;
+
    *(uint16_t*)(buffer+UDP_CHECKSUM) = 0;
-   tcp_checksum(buffer+IP_O_SADDR, buffer+IP_O_DADDR, buffer+UDP_START, ntohs(*(uint16_t*)(buffer+UDP_LEN)), (uint16_t*)(buffer+UDP_CHECKSUM));
+   tcp4_checksum(buffer+IP_O_SADDR, buffer+IP_O_DADDR, 0x11, buffer+UDP_START, ntohs(*(uint16_t*)(buffer+UDP_LEN)), (uint16_t*)(buffer+UDP_CHECKSUM));
    if (*(uint16_t*)(buffer+UDP_CHECKSUM) == 0)
      *(uint16_t*)(buffer+UDP_CHECKSUM) = 0xffff; 
 
    return 0;
+
 }

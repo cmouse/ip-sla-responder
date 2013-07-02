@@ -51,6 +51,13 @@
 #define UDP_CHECKSUM (UDP_START+6)
 #define UDP_DATA (UDP_START+8)
 
+#define UDP6_START (ip6_start + 40)
+#define UDP6_O_SRCPORT (UDP6_START)
+#define UDP6_O_DSTPORT (UDP6_START + 2)
+#define UDP6_O_LEN (UDP6_START + 4)
+#define UDP6_O_CHECKSUM (UDP6_START + 8)
+#define UDP6_O_DATA (UDP6_START + 10)
+
 #define ARP_START (ETH_HLEN)
 
 struct config_s {
@@ -78,8 +85,8 @@ inline uint32_t get_ts_utc(struct timespec *res);
 inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec);
 void bin2hex(const unsigned char *data, size_t dlen);
 inline uint16_t ip_checksum(const unsigned char *buffer, size_t dlen, uint16_t *target);
-inline uint16_t tcp_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target);
-inline uint16_t icmp6_checksum(const u_char *src_addr, const u_char *dest_addr, u_char *buff, size_t dlen, uint16_t *target);
+inline uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target);
+inline uint16_t tcp6_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target);
 
 inline void swapmac(u_char *bytes);
 inline void swapip(u_char *bytes);
@@ -105,10 +112,13 @@ int process_arp(u_char *buffer, size_t length, struct config_s *config);
 int process_ip(u_char *buffer, size_t length, struct config_s *config);
 int process_ip6(u_char *buffer, size_t length, struct config_s *config);
 int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_udp6(u_char *buffer, size_t length, struct config_s *config, size_t ip6_start);
 int process_icmp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 int process_icmp6(u_char *buffer, size_t length, struct config_s *config, size_t ip6_start);
 int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_cisco6(u_char *buffer, size_t length, struct config_s *config, size_t ip6_start);
 int process_echo4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
+int process_echo6(u_char *buffer, size_t length, struct config_s *config, size_t ip_start);
 
 void do_send(int fd, u_char *bytes, size_t plen);
 #endif
