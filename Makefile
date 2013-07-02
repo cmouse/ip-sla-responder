@@ -2,7 +2,7 @@ CONFIGFILE=/etc/responder.conf
 LD=$(CC)
 CFLAGS=-W -Wall -Wno-unused -g -O2 -DCONFIGFILE="\"$(CONFIGFILE)\""
 LDFLAGS=-g
-OBJECTS=pak.o ether.o ip.o ip6.o icmp4.o icmp6.o arp.o udp4.o udp6.o junos.o cisco.o utils.o
+OBJECTS=utils.o pak.o ether.o ip.o ip6.o icmp4.o icmp6.o arp.o udp4.o udp6.o junos.o cisco.o
 BINARIES=responder
 LIBS=-lrt -lpcap
 

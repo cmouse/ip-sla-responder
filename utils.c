@@ -1,7 +1,7 @@
 #include "responder.h"
 
-static const unsigned long NTP_EPOCH = 2208988800UL;
-static const unsigned long NTP_SCALE_FRAC = 4294967296UL;
+#define NTP_EPOCH 2208988800UL
+#define NTP_SCALE_FRAC 4294967296UL
 
 inline uint32_t get_ts_utc(struct timespec *res) {
    struct tm tm;
