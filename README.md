@@ -29,11 +29,11 @@ To install, run make CC=gcc (or some other compiler, default is cc). This softwa
 Usage
 -----
 
-The software can run in either routed or connected mode. In routed mode, you are expected to route in some IP via some VLAN. At the moment it will not work w/o VLANs. In connected mode, you can have one or more vlans configured with same network on the network side, and nothing on linux side. Best if you don't configure any vlans and leave the interface offline, so linux or the nic won't eat up your packets. 
+The software can run in either routed or connected mode. In routed mode, you are expected to route in some IP via some VLAN. You can disable VLAN support in config file if necessary. In connected mode, you can have one or more vlans configured with same network on the network side, and nothing on linux side. Best if you don't configure any vlans and leave the interface offline, so linux or the nic won't eat up your packets. This is best used if you want to support same IP address on multiple VRFs. You can use up to 4096 different VLANs. 
 
 Run the software, no arguments are required, defaults are used instead. To see these, run with -h. 
 
-After this, you can point Cisco IP SLA UDP Jitter measurements, or Juniper RPM icmp-ping(-timestamp) or udp-ping(-timestamp) measurements towards the IP. It'll reply these.
+After this, you can point Cisco IP SLA UDP echo, UDP Jitter measurements (udp-jitter), or Juniper RPM icmp-ping(-timestamp) or udp-ping(-timestamp) measurements towards the IP. It'll reply these.
 
 
 TODO
