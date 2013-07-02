@@ -4,3 +4,4 @@ responder
 responder-test
 *.bak
 test*
+responder.conf

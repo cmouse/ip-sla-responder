@@ -1,0 +1,5 @@
+vlansupport=1
+ipaddress=195.10.131.29
+ip6address=2001:6e8:280::1:342d
+iface=eth1
+debuglevel=1
