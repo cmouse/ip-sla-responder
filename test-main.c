@@ -305,7 +305,7 @@ int test_checksum_tcp(void) {
    uh.check = 0xb423;
    memcpy(data, &uh, sizeof uh);
    memcpy(data+sizeof(uh), "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56); // just some random data to make things interesting
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, data, 64, &uh.check);
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, data, 64, &uh.check);
 
   if (uh.check != 0) {
       test_log("Checksum wrong: (0 != %04x)", uh.check);
@@ -523,7 +523,7 @@ int test_udp_cisco_init(void) {
    *((unsigned short*)(ptr+0x14)) = htons(50505); // actual testing port
 
    // then calculate checksum
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, bytes+UDP_START, 32, (unsigned short*)(bytes+UDP_START+0x06));
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, bytes+UDP_START, 32, (unsigned short*)(bytes+UDP_START+0x06));
    
    // and that's it. 
    do_pak_handler(bytes, 66 + eth_o_vlan);
@@ -536,7 +536,7 @@ int test_udp_cisco_init(void) {
    if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 32, 17)) return 1;
 
    // checksum check
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, test_result_buffer+UDP_START, 32, (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, test_result_buffer+UDP_START, 32, (unsigned short*)(test_result_buffer+UDP_START+0x06));
    if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
       test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
       return 1;
@@ -578,7 +578,7 @@ int test_udp_cisco_jitter_type_2(void) {
    *(uint16_t*)(ptr + 0xc) = 0x123;
 
    // then calculate checksum
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
 
    // and that's it. 
    // emulate 0.1s delay 
@@ -594,7 +594,7 @@ int test_udp_cisco_jitter_type_2(void) {
    if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 40, 17)) return 1;
 
    // checksum check
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, test_result_buffer+UDP_START, 40, (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, test_result_buffer+UDP_START, 40, (unsigned short*)(test_result_buffer+UDP_START+0x06));
    if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
       test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
       return 1;
@@ -643,7 +643,7 @@ int test_udp_cisco_jitter_type_3(void) {
    *(uint16_t*)(ptr+0x34) = 0x123;
 
    // then calculate checksum
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
 
    // and that's it. 
    // emulate 0.1s delay 
@@ -659,7 +659,7 @@ int test_udp_cisco_jitter_type_3(void) {
    if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 40, 17)) return 1;
 
    // checksum check
-   tcp_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, test_result_buffer+UDP_START, 40, (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, test_result_buffer+UDP_START, 40, (unsigned short*)(test_result_buffer+UDP_START+0x06));
    if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
       test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
       return 1;
