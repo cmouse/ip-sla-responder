@@ -45,7 +45,8 @@ int process_ip(u_char *buffer, size_t length, struct config_s *config) {
     if (process_udp4(buffer, length, config, ip_start)) return -1;
     break;
   default:
-    printf("Ignoring IP protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP_O_PROTO), IP_O_PROTO);
+    if (config->debuglevel) 
+       printf("Ignoring IP protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP_O_PROTO), IP_O_PROTO);
     return -1;
   }
 

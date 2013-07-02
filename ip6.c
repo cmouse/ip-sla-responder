@@ -47,7 +47,8 @@ int process_ip6(u_char *buffer, size_t length, struct config_s *config) {
     if (process_udp6(buffer, length, config, ip6_start)) return -1;
     break;
   default:
-    printf("Ignoring IPv6 protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP6_O_NH), IP6_O_NH);
+    if (config->debuglevel)
+      printf("Ignoring IPv6 protocol %02x at %04lx\n", *(uint8_t*)(buffer + IP6_O_NH), IP6_O_NH);
     return -1;
   }
 
