@@ -82,15 +82,15 @@ struct pak_handler_s {
   int fd;
 };
 
-inline uint32_t get_ts_utc(struct timespec *res);
-inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec);
+uint32_t get_ts_utc(struct timespec *res);
+void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec);
 void bin2hex(const unsigned char *data, size_t dlen);
-inline uint16_t ip_checksum(const unsigned char *buffer, size_t dlen, uint16_t *target);
-inline uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target);
-inline uint16_t tcp6_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target);
+uint16_t ip_checksum(const unsigned char *buffer, size_t dlen, uint16_t *target);
+uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target);
+uint16_t tcp6_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target);
 
-inline void swapmac(u_char *bytes);
-inline void swapip(u_char *bytes);
+void swapmac(u_char *bytes);
+void swapip(u_char *bytes);
 void bin2hex(const unsigned char *data, size_t dlen);
 
 /*

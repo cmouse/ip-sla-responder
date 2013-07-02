@@ -3,13 +3,13 @@
 #define NTP_EPOCH 2208988800UL
 #define NTP_SCALE_FRAC 4294967296UL
 
-inline uint32_t get_ts_utc(struct timespec *res) {
+uint32_t get_ts_utc(struct timespec *res) {
    struct tm tm;
    gmtime_r(&(res->tv_sec), &tm);
    return (tm.tm_hour*3600+tm.tm_min*60+tm.tm_sec)*1000 + (res->tv_nsec/1000000);
 }
 
-inline void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec) {
+void ts_to_ntp(const struct timespec *res, uint32_t *ntp_sec, uint32_t *ntp_fsec) {
     *ntp_sec = htonl(res->tv_sec + NTP_EPOCH);
     *ntp_fsec = htonl(((NTP_SCALE_FRAC * (res->tv_nsec/1000)) / 1000000UL));
 }
@@ -24,7 +24,7 @@ void bin2hex(const unsigned char *data, size_t dlen) {
    printf("\n");
 }
 
-inline uint16_t ip_checksum(const unsigned char *buff, size_t dlen, uint16_t *target) {
+uint16_t ip_checksum(const unsigned char *buff, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
@@ -48,7 +48,7 @@ inline uint16_t ip_checksum(const unsigned char *buff, size_t dlen, uint16_t *ta
    return *target;
 }
 
-inline uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target) {
+uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
@@ -77,7 +77,7 @@ inline uint16_t tcp4_checksum(const u_char *src_addr, const u_char *dest_addr, i
    return *target;
 }
 
-inline uint16_t tcp6_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target) {
+uint16_t tcp6_checksum(const u_char *src_addr, const u_char *dest_addr, int proto, u_char *buff, size_t dlen, uint16_t *target) {
    register uint16_t word16;
    register uint32_t sum=0;
    register size_t i;
