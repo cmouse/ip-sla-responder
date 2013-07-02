@@ -149,6 +149,9 @@ int main(int argc, char * const argv[]) {
    config.debuglevel = 0;
    config.cisco_port = htons(50505);
 
+   fprintf("IP SLA responder v2.0 (c) Aki Tuomi 2013-\r\n");
+   fprintf("See LICENSE for more information\r\n");
+
    if (argc == 2) {
     if (argv[1][0] != '-') {
       if (configure(argv[1], &config)) return -1;
