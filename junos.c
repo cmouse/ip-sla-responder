@@ -74,7 +74,8 @@ int process_echo6(u_char *buffer, size_t length, struct config_s *config, size_t
          *(uint32_t*)(buffer+UDP6_O_DATA+0x24) = htonl(res.tv_sec);
          *(uint32_t*)(buffer+UDP6_O_DATA+0x28) = htonl(res.tv_nsec/1000);
       } else {
-         // treat as normal ECHO - do nothing to it.
+         // treat as normal ECHO - do nothing to it. except small trick
+         memcpy(buffer + UDP6_O_DATA, "helo", 4);
       }
       return 0;
  }
