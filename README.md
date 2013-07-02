@@ -24,7 +24,7 @@ Note that this software has absolutely no rate limiting. If you put it on a mach
 Installation
 ------------
 
-To install, run make (or gmake). This software expects linux 2.6 or better kernel, or kernel with similar facilities. It needs pcap(3) interface on kernel and AF_PACKET. It also requires librt and libpcap. 
+To install, run make CC=gcc (or some other compiler, default is cc). This software expects linux 2.6 or better kernel, or kernel with similar facilities. It needs pcap(3) interface on kernel and AF_PACKET. It also requires librt and libpcap. 
 
 Usage
 -----
