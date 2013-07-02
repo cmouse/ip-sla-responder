@@ -29,7 +29,8 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
    if (*(uint16_t*)(buffer+UDP_DPORT) == 0xaf07  && length > 23) { // port 1967
       // this is probably cisco ipsla.
       if (*(uint8_t*)(buffer+UDP_DATA) == 0x01 &&                // version = 1
-          *(uint16_t*)(buffer+UDP_DATA+0x14) == config->cisco_port) { // target port = our preselected port
+          *(uint16_t*)(buffer+UDP_DATA+0x14) >= config->cisco_port_low &&
+          *(uint16_t*)(buffer+UDP_DATA+0x14) <= config->cisco_port_high) { // target port = our preselected port
          // truncate packet
          *(uint16_t*)(buffer+IP_O_TOT_LEN) = 0x3400; // htons(52)
          *(uint16_t*)(buffer+UDP_LEN) = 0x2000; //  htons(32)
@@ -44,7 +45,9 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
          return -1; // ignore this
       }
       return 0;
-   } else if (*(uint16_t*)(buffer+UDP_DPORT) == config->cisco_port && length > UDP_DATA + 31) {
+   } else if (*(uint16_t*)(buffer+UDP_DPORT) == config->cisco_port_low && 
+              *(uint16_t*)(buffer+UDP_DPORT) == config->cisco_port_high &&
+              length > UDP_DATA + 31) {
       clock_gettime(CLOCK_REALTIME, &res);
       if (buffer[UDP_DATA+0x1] == 0x02) {
         // fill in ms accurate time from midnight, aka ICMP timestamp
@@ -69,7 +72,7 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
          memcpy(buffer+0x52, "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00", 11);
       } else {
          if (config->debuglevel) {
-            printf("Ignored packet to udp/%u, did not contain cisco ipsla\n", ntohs(config->cisco_port));
+            printf("Ignored packet to udp/%u, did not contain cisco ipsla\n", ntohs(*(uint16_t*)(buffer+UDP_DPORT)));
          }
          return -1;
       }
@@ -118,7 +121,8 @@ int process_cisco6(u_char *buffer, size_t length, struct config_s *config, size_
    if (*(uint16_t*)(buffer+UDP6_O_DSTPORT) == 0xaf07  && length > 133) { // port 1967
       // this is probably cisco ipsla.
       if (*(uint8_t*)(buffer+UDP6_O_DATA) == 0x01 &&                // version = 1
-          *(uint16_t*)(buffer+UDP6_O_DATA+0x20) == config->cisco_port) { // target port = our preselected port
+          *(uint16_t*)(buffer+UDP6_O_DATA+0x20) >= config->cisco_port_low &&
+          *(uint16_t*)(buffer+UDP6_O_DATA+0x20) <= config->cisco_port_high) { // target port = our preselected port
          // truncate packet
 /*         *(uint16_t*)(buffer+IP6_O_LEN) = 0x4c00; // htons(76)
          *(uint16_t*)(buffer+UDP6_O_LEN) = 0x4c00; //  htons(76)
@@ -134,7 +138,9 @@ int process_cisco6(u_char *buffer, size_t length, struct config_s *config, size_
          return -1; // ignore this
       }
       return 0;
-   } else if (*(uint16_t*)(buffer+UDP6_O_DSTPORT) == config->cisco_port && length > UDP6_O_DATA + 31) {
+   } else if (*(uint16_t*)(buffer+UDP6_O_DSTPORT) >= config->cisco_port_low &&
+              *(uint16_t*)(buffer+UDP6_O_DSTPORT) <= config->cisco_port_high &&
+              length > UDP6_O_DATA + 31) {
       clock_gettime(CLOCK_REALTIME, &res);
       if (buffer[UDP6_O_DATA+0x1] == 0x01) {
         // do nothing? 
@@ -161,7 +167,7 @@ int process_cisco6(u_char *buffer, size_t length, struct config_s *config, size_
          memcpy(buffer+0x52, "\xff\xff\xff\xff\xff\xff\xff\xff\x00\x00\x00", 11);
       } else {
          if (config->debuglevel) {
-            printf("Ignored packet to udp/%u, did not contain cisco ipsla\n", ntohs(config->cisco_port));
+            printf("Ignored packet to udp/%u, did not contain cisco ipsla\n", ntohs(*(uint16_t*)(buffer+UDP6_O_DSTPORT+0x20)));
          }
          return -1;
       }

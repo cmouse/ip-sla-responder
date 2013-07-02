@@ -91,6 +91,14 @@ int configure(const char *file, struct config_s *config) {
              fprintf(stderr, "vlansupport must be 0 or 1\r\n");
              return -1;
           }
+        } else if (!strcasecmp(attribute,"ciscoport")) {
+          ptr3 = strstr(value,":");
+          if (ptr3) {
+              config->cisco_port_low = htons(atoi(value));
+              config->cisco_port_high = htons(atoi(ptr3+1));
+          } else {
+              config->cisco_port_low = config->cisco_port_high = htons(atoi(value));
+          }
         } else if (!strcasecmp(attribute,"mac")) {
           char *ptr,*optr;
           unsigned char *mptr = config->mac;
@@ -147,7 +155,7 @@ int main(int argc, char * const argv[]) {
    
    config.vlan = 1;
    config.debuglevel = 0;
-   config.cisco_port = htons(50505);
+   config.cisco_port_low = config.cisco_port_high = htons(50505);
 
    fprintf(stderr,"IP SLA responder v2.0 (c) Aki Tuomi 2013-\r\n");
    fprintf(stderr,"See LICENSE for more information\r\n");
@@ -163,6 +171,17 @@ int main(int argc, char * const argv[]) {
       if (configure(CONFIGFILE, &config)) return -1;
    }
 
+   if (config.do_ip4) {
+      char addr[200];
+      inet_ntop(AF_INET, &config.ip_addr, addr, 200);
+      fprintf(stderr, "Listening on %s %s:%u-%u\n", config.ifname, addr, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+   }
+   if (config.do_ip6) {
+      char addr[200];
+      inet_ntop(AF_INET6, &config.ip6_addr, addr, 200);
+      fprintf(stderr, "Listening on %s [%s]:%u-%u\n", config.ifname, addr, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+   }
+ 
    // select first non-loopback if here
    if (strlen(config.ifname) == 0) {
      pcap_if_t *alldevsp, *devptr;

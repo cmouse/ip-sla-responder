@@ -71,7 +71,8 @@ struct config_s {
    char ifname[IFNAMSIZ];       /* name of interface to use */
    int debuglevel;              /* 0 = no, 1 = yes, 2 = with dumps */
    struct timespec res0;        /* receive timestamp */ 
-   uint16_t cisco_port;         /* Port to listen for Cisco IPSLA */
+   uint16_t cisco_port_low;     /* Start of port range to listen for Cisco IPSLA */
+   uint16_t cisco_port_high;    /* Start of port range to listen for Cisco IPSLA */
    size_t plen;                 /* actual length of packet */
    int do_ip4;
    int do_ip6;
