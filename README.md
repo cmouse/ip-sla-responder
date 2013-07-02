@@ -31,10 +31,11 @@ Usage
 
 The software can run in either routed or connected mode. In routed mode, you are expected to route in some IP via some VLAN. You can disable VLAN support in config file if necessary. In connected mode, you can have one or more vlans configured with same network on the network side, and nothing on linux side. Best if you don't configure any vlans and leave the interface offline, so linux or the nic won't eat up your packets. This is best used if you want to support same IP address on multiple VRFs. You can use up to 4096 different VLANs. 
 
-Run the software, no arguments are required, defaults are used instead. To see these, run with -h. 
+To configure the software, copy and edit responder.conf.sample. Program accepts
+one parameter, location where to read the file. Default is /etc/responder.conf
+or whatever you defined in Makefile.
 
 After this, you can point Cisco IP SLA UDP echo, UDP Jitter measurements (udp-jitter), or Juniper RPM icmp-ping(-timestamp) or udp-ping(-timestamp) measurements towards the IP. It'll reply these.
-
 
 TODO
 ----
