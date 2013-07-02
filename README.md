@@ -5,16 +5,21 @@ Contents
 --------
 
 1. About
-2. Installation
-3. Usage
-4. TODO
+2. Warnings
+3. Installation
+4. Usage
+5. TODO
 
 Please visit http://cmouse.github.com/ip-sla-responder/ for latest information. 
 
 About
 -----
 
-This program is intended for Cisco IP-SLA and Juniper PRM measurements. You can configure it to listen on any ethernet interface, and it'll reply to you. It expects all packets to be 802.1q encapsulated, and it works best if you do not configure any vlans into your system. IP and MAC address can be freely chosen, and do not need to be configured on your system. 
+This program is intended for Cisco IP-SLA and Juniper PRM measurements. You can configure it to listen on any ethernet interface, and it'll reply to you. It expects all packets to be 802.1q encapsulated, and it works best if you do not configure any vlans into your system. IP and MAC address can be freely chosen, and do not need to be configured on your system. It supports both IPv4 and IPv6 protocols. You can also run it for your own measurement systems by utilizing the UDP ECHO port, it'll reply to you whatever you send there.
+
+Warnings
+--------
+Note that this software has absolutely no rate limiting. If you put it on a machine, it *will* reply as fast as possible. It has no DDoS protection or any kind of access lists. You can easily ping someone to death with it. Be careful and use ACLs in front of it. 
 
 Installation
 ------------
@@ -30,10 +35,10 @@ Run the software, no arguments are required, defaults are used instead. To see t
 
 After this, you can point Cisco IP SLA UDP Jitter measurements, or Juniper RPM icmp-ping(-timestamp) or udp-ping(-timestamp) measurements towards the IP. It'll reply these.
 
+
 TODO
 ----
 
- * Fix debugging to actually do something
  * Add more supported types for Cisco
  * Daemonize?
  * Code cleanup and documentation
