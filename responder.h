@@ -76,6 +76,7 @@ struct config_s {
    size_t plen;                 /* actual length of packet */
    int do_ip4;
    int do_ip6;
+   int do_check_addr;		/* allow any IP address as dest */
 };
 
 struct pak_handler_s {

@@ -31,8 +31,8 @@ int process_ip(u_char *buffer, size_t length, struct config_s *config) {
   if (config->vlan) ip_start += ETH_O_VLAN;
   if (buffer[ip_start] != IP_MAGIC) return -1;
   
-  // targeted to us?
-  if (*(uint32_t*)(buffer + IP_O_DADDR) != config->ip_addr.s_addr) return -1;
+  // targeted to us? do we even care?
+  if (config->do_check_addr && *(uint32_t*)(buffer + IP_O_DADDR) != config->ip_addr.s_addr) return -1;
 
   // determine protocol
   switch(*(uint8_t*)(buffer + IP_O_PROTO)) {

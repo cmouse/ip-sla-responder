@@ -117,6 +117,12 @@ int configure(const char *file, struct config_s *config) {
              fprintf(stderr, "Invalid MAC address %s supplied\r\n", optarg);
              return -1;
           }
+        } else if (!strcasecmp(attribute,"check_address")) {
+          if (!strcasecmp(value, "no") ||
+              !strcasecmp(value, "off") ||
+              !strcasecmp(value, "0")) {
+              config->do_check_addr = 0;
+          }
         }
       }
    }
@@ -156,7 +162,7 @@ int main(int argc, char * const argv[]) {
    config.vlan = 1;
    config.debuglevel = 0;
    config.cisco_port_low = config.cisco_port_high = htons(50505);
-
+   config.do_check_addr = 1;
    fprintf(stderr,"IP SLA responder v2.0 (c) Aki Tuomi 2013-\r\n");
    fprintf(stderr,"See LICENSE for more information\r\n");
 
@@ -172,9 +178,13 @@ int main(int argc, char * const argv[]) {
    }
 
    if (config.do_ip4) {
-      char addr[200];
-      inet_ntop(AF_INET, &config.ip_addr, addr, 200);
-      fprintf(stderr, "Listening on %s %s:%u-%u\n", config.ifname, addr, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+      if (config.do_check_addr) {
+         char addr[200];
+         inet_ntop(AF_INET, &config.ip_addr, addr, 200);
+         fprintf(stderr, "Listening on %s %s:%u-%u\n", config.ifname, addr, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+      } else {
+          fprintf(stderr, "Listening on %s 0:0:0:0:%u-%u\n", config.ifname, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+      }
    }
    if (config.do_ip6) {
       char addr[200];

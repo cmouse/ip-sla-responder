@@ -25,6 +25,7 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 int process_arp(u_char *buffer, size_t length, struct config_s *config) {
     u_char tmp[ETH_ALEN];
+    uint32_t tmpip;
     size_t arp_start = ARP_START;
 
     if (config->vlan) arp_start += ETH_O_VLAN;
@@ -33,7 +34,8 @@ int process_arp(u_char *buffer, size_t length, struct config_s *config) {
         *(uint16_t*)(buffer+arp_start+2)!=0x008 ||    // ethertype IP
         *(uint8_t*)(buffer+arp_start+4)!=0x06 ||      // hwlen 6
         *(uint8_t*)(buffer+arp_start+7)!=0x01 ||      // request
-        *(uint32_t*)(buffer+arp_start+24)!=config->ip_addr.s_addr) { // our IP
+        (config->do_check_addr == 1 &&                 // do we care about this?
+        *(uint32_t*)(buffer+arp_start+24)!=config->ip_addr.s_addr)) { // our IP
       return -1; // ignore, not for us.
     }
 
@@ -41,12 +43,14 @@ int process_arp(u_char *buffer, size_t length, struct config_s *config) {
     if (!memcmp(buffer + ETH_O_SOURCE, "\xff\xff\xff\xff\xff\xff", ETH_ALEN)) 
        memcpy(buffer + ETH_O_SOURCE, config->mac, ETH_ALEN);
  
+    // copy target
+    tmpip = *(uint32_t*)(buffer+arp_start+0x12+ETH_ALEN); 
     // move sender to target, again
     memmove(buffer+arp_start+0x12, buffer+arp_start+0x8, ETH_ALEN+4);
     // fill in sender
     memcpy(buffer+arp_start+0x8, config->mac, ETH_ALEN);
+    *(uint32_t*)(buffer+arp_start+0x8+ETH_ALEN) = tmpip;
 
-    *(uint32_t*)(buffer+arp_start+0x8+ETH_ALEN) = config->ip_addr.s_addr;
     // make this response
     buffer[arp_start+0x7] = 0x02;
 
