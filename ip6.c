@@ -34,9 +34,11 @@ int process_ip6(u_char *buffer, size_t length, struct config_s *config) {
   if ((buffer[ip6_start] & 0xF0) != 0x60) return -1;
   
   // check if it's for us
-  if (memcmp(buffer + IP6_O_DADDR, config->ip6_addr.s6_addr, 16) &&
-      memcmp(buffer + IP6_O_DADDR, config->link6_addr.s6_addr, 16) &&
-      memcmp(buffer + IP6_O_DADDR, config->mc6_addr.s6_addr, 16)) return -1;
+  if (memcmp(buffer + IP6_O_DADDR, config->link6_addr.s6_addr, 16) &&
+      memcmp(buffer + IP6_O_DADDR, config->mc6_addr.s6_addr, 16)) {
+      // FIXME: IPv6 do_check_addr support
+      if (memcmp(buffer + IP6_O_DADDR, config->ip6_addr.s6_addr, 16)) return -1;
+  }
 
   // choose protocol
   switch(buffer[IP6_O_NH]) {
