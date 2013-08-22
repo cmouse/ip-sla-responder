@@ -29,8 +29,8 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
    if (*(uint16_t*)(buffer+UDP_DPORT) == 0xaf07  && length > 23) { // port 1967
       // this is probably cisco ipsla.
       if (*(uint8_t*)(buffer+UDP_DATA) == 0x01 &&                // version = 1
-          *(uint16_t*)(buffer+UDP_DATA+0x14) >= config->cisco_port_low &&
-          *(uint16_t*)(buffer+UDP_DATA+0x14) <= config->cisco_port_high) { // target port = our preselected port
+          ntohs(*(uint16_t*)(buffer+UDP_DATA+0x14)) >= config->cisco_port_low &&
+          ntohs(*(uint16_t*)(buffer+UDP_DATA+0x14)) <= config->cisco_port_high) { // target port = our preselected port
          // truncate packet
          *(uint16_t*)(buffer+IP_O_TOT_LEN) = 0x3400; // htons(52)
          *(uint16_t*)(buffer+UDP_LEN) = 0x2000; //  htons(32)
@@ -40,13 +40,13 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
          memset(buffer+UDP_DATA+0x4, 0, 8);
       } else {
          if (config->debuglevel) {
-            printf("Ignored packet to udp/1967, did not contain cisco ipsla init\n");
+            printf("Ignored packet to udp/1967, did not contain acceptable cisco ipsla init (requested port udp/%u)\n", *(uint16_t*)(buffer+UDP_DATA+0x14));
          }
          return -1; // ignore this
       }
       return 0;
-   } else if (*(uint16_t*)(buffer+UDP_DPORT) == config->cisco_port_low && 
-              *(uint16_t*)(buffer+UDP_DPORT) == config->cisco_port_high &&
+   } else if (ntohs(*(uint16_t*)(buffer+UDP_DPORT)) >= config->cisco_port_low && 
+              ntohs(*(uint16_t*)(buffer+UDP_DPORT)) <= config->cisco_port_high &&
               length > UDP_DATA + 31) {
       clock_gettime(CLOCK_REALTIME, &res);
       if (buffer[UDP_DATA+0x1] == 0x02) {
@@ -77,7 +77,7 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
          return -1;
       }
       return 0;
-   }
+   } 
    return -1;
 }
 
