@@ -94,10 +94,10 @@ int configure(const char *file, struct config_s *config) {
         } else if (!strcasecmp(attribute,"ciscoport")) {
           ptr3 = strstr(value,":");
           if (ptr3) {
-              config->cisco_port_low = htons(atoi(value));
-              config->cisco_port_high = htons(atoi(ptr3+1));
+              config->cisco_port_low = atoi(value);
+              config->cisco_port_high = atoi(ptr3+1);
           } else {
-              config->cisco_port_low = config->cisco_port_high = htons(atoi(value));
+              config->cisco_port_low = config->cisco_port_high = atoi(value);
           }
         } else if (!strcasecmp(attribute,"mac")) {
           char *ptr,*optr;
@@ -161,7 +161,7 @@ int main(int argc, char * const argv[]) {
    
    config.vlan = 1;
    config.debuglevel = 0;
-   config.cisco_port_low = config.cisco_port_high = htons(50505);
+   config.cisco_port_low = config.cisco_port_high = 50505;
    config.do_check_addr = 1;
    fprintf(stderr,"IP SLA responder v2.0 (c) Aki Tuomi 2013-\r\n");
    fprintf(stderr,"See LICENSE for more information\r\n");
@@ -181,15 +181,15 @@ int main(int argc, char * const argv[]) {
       if (config.do_check_addr) {
          char addr[200];
          inet_ntop(AF_INET, &config.ip_addr, addr, 200);
-         fprintf(stderr, "Listening on %s %s:%u-%u\n", config.ifname, addr, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+         fprintf(stderr, "Listening on %s %s:%u-%u\n", config.ifname, addr, config.cisco_port_low, config.cisco_port_high);
       } else {
-          fprintf(stderr, "Listening on %s 0:0:0:0:%u-%u\n", config.ifname, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+          fprintf(stderr, "Listening on %s 0:0:0:0:%u-%u\n", config.ifname, config.cisco_port_low, config.cisco_port_high);
       }
    }
    if (config.do_ip6) {
       char addr[200];
       inet_ntop(AF_INET6, &config.ip6_addr, addr, 200);
-      fprintf(stderr, "Listening on %s [%s]:%u-%u\n", config.ifname, addr, ntohs(config.cisco_port_low), ntohs(config.cisco_port_high));
+      fprintf(stderr, "Listening on %s [%s]:%u-%u\n", config.ifname, addr, config.cisco_port_low, config.cisco_port_high);
    }
  
    // select first non-loopback if here
