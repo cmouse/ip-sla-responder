@@ -1,10 +1,21 @@
 # set to 0 if you do not wish to support dot1q vlans
 vlansupport=1
+
 # set for ipv4 support
 ipaddress=195.10.131.29
+
 # set for ipv6 support
 ip6address=2001:6e8:280::1:342d
-# interface to listen on
+
+# interface to listen on (defaults to first non-loopback)
 iface=eth1
+
 # debug level (0 = nothing, 1 = something, 2 = with packet dumps)
 debuglevel=1
+
+# mac address (defaults to interface if nothing given)
+#mac=de:ad:be:ef:00:01
+
+# cisco ip sla port range (defaults to 50505)
+#ciscoport=50505
+#ciscoport=50000:60000
