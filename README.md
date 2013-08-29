@@ -21,6 +21,16 @@ Warnings
 --------
 Note that this software has absolutely no rate limiting. If you put it on a machine, it *will* reply as fast as possible. It has no DDoS protection or any kind of access lists. You can easily ping someone to death with it. Be careful and use ACLs in front of it. 
 
+This version comes with any-ipv4 support, so you can actually make it reply to
+any IPv4 address. Do not enable on internet facing hosts. 
+
+For IPv4 all fragmented packets are silently dropped, and there will be no 
+support for fragments in the future.
+
+For IPv6 all packets that contain any extended headers are silently dropped. If
+someone makes a feature request, some extended headers might be preserved, but
+that is highly unlikely. 
+
 Installation
 ------------
 
