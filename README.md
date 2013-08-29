@@ -19,6 +19,9 @@ This program is intended for Cisco IP-SLA and Juniper PRM measurements. You can 
 
 Warnings
 --------
+This software is intended for *little endian* machines. Do not attempt to use
+it on any hardware that has *big endian* byte ordering. It will simply not work.
+
 Note that this software has absolutely no rate limiting. If you put it on a machine, it *will* reply as fast as possible. It has no DDoS protection or any kind of access lists. You can easily ping someone to death with it. Be careful and use ACLs in front of it. 
 
 This version comes with any-ipv4 support, so you can actually make it reply to
