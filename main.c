@@ -183,7 +183,7 @@ int main(int argc, char * const argv[]) {
          inet_ntop(AF_INET, &config.ip_addr, addr, 200);
          fprintf(stderr, "Listening on %s %s:%u-%u\n", config.ifname, addr, config.cisco_port_low, config.cisco_port_high);
       } else {
-          fprintf(stderr, "Listening on %s 0:0:0:0:%u-%u\n", config.ifname, config.cisco_port_low, config.cisco_port_high);
+          fprintf(stderr, "Listening on %s 0.0.0.0:%u-%u\n", config.ifname, config.cisco_port_low, config.cisco_port_high);
       }
    }
    if (config.do_ip6) {
