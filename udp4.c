@@ -27,6 +27,8 @@ SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 int process_udp4(u_char *buffer, size_t length, struct config_s *config, size_t ip_start) {
    uint16_t tmp;
 
+   if (ntohs(*(uint16_t*)(buffer+UDP_LEN)) > length) return; // ignore oversize packet
+
    if (process_cisco4(buffer, length, config, ip_start) && 
        process_echo4(buffer, length, config, ip_start)) return -1;
 

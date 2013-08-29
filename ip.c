@@ -34,6 +34,12 @@ int process_ip(u_char *buffer, size_t length, struct config_s *config) {
   // targeted to us? do we even care?
   if (config->do_check_addr && *(uint32_t*)(buffer + IP_O_DADDR) != config->ip_addr.s_addr) return -1;
 
+  if ((*(uint16_t*)(buffer+IP_O_FRAG_OFF) & 0xE000) == 1 ||
+       (*(uint16_t*)(buffer+IP_O_FRAG_OFF) & 0x1FFF) > 0 ) {
+     // ignore packet with more fragment flag or fragment offset > 1
+     return -1;
+  }
+
   // determine protocol
   switch(*(uint8_t*)(buffer + IP_O_PROTO)) {
   case 0x1:

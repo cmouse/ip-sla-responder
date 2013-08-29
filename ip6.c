@@ -40,7 +40,8 @@ int process_ip6(u_char *buffer, size_t length, struct config_s *config) {
       if (memcmp(buffer + IP6_O_DADDR, config->ip6_addr.s6_addr, 16)) return -1;
   }
 
-  // choose protocol
+  // choose protocol by next header
+  // ANY EXTENSION HEADERS WILL CAUSE PACKET TO BE DROPPED
   switch(buffer[IP6_O_NH]) {
   case 0x3A: // icmpv6
     if (process_icmp6(buffer, length, config, ip6_start)) return -1;
