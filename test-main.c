@@ -357,6 +357,79 @@ int test_icmp_ping(void) {
    return memcmp(test_result_buffer + ICMP_DATA, "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
 }
 
+int test_df(void) {
+   u_char bytes[ETH_FRAME_LEN];
+   struct icmphdr ih;
+
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   // add IP header.
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 64, 1, bytes);
+   *(uint16_t*)(bytes + IP_O_FRAG_OFF) = 0x40; // DF 
+   ih.type = 8;
+   ih.code = 0;
+   ih.checksum = 0;
+   ih.un.echo.id = 0x4343;
+   ih.un.echo.sequence = 0x4242;
+   // copy into place
+   memcpy(bytes + ICMP_START, &ih, sizeof(ih));
+   // add some payload
+   memcpy(bytes + ICMP_DATA, "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
+   // checksum
+   ip_checksum(bytes + ICMP_START, sizeof(ih) + 56, (uint16_t*)(bytes + ICMP_START + 2));
+
+   // let's see what we get
+   do_pak_handler(bytes, 100 + 2*config.vlan);
+
+   if (test_result_len != 100 + 2*config.vlan) {
+     test_log("result is not 102 bytes long as expected, was %lu", test_result_len);
+     return 1;
+   }
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 64, 1)) return 1;
+
+   // check that all is good.
+   ip_checksum(test_result_buffer + ICMP_START, sizeof(ih) + 56, (uint16_t*)(test_result_buffer + ICMP_START + 2));
+   memcpy(&ih, test_result_buffer + ICMP_START, sizeof ih);
+
+   if (ih.checksum != 0) { test_log("ICMP packet checksum wrong"); return 1; }
+   if (ih.type != 0) { test_log("unexpected ICMP type in response"); return 1; }
+   if (ih.code != 0) { test_log("unexpected ICMP code in response"); return 1; }
+   if (ih.un.echo.id != 0x4343) { test_log("wrong ICMP echo id"); return 1; }
+   if (ih.un.echo.sequence != 0x4242) { test_log("wrong ICMP echo sequence"); return 1; }
+
+   // check payload
+   return memcmp(test_result_buffer + ICMP_DATA, "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
+}
+
+int test_mf(void) {
+   u_char bytes[ETH_FRAME_LEN];
+   struct icmphdr ih;
+
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   // add IP header.
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 64, 1, bytes);
+   *(uint16_t*)(bytes + IP_O_FRAG_OFF) = 0x20; // MF 
+   ih.type = 8;
+   ih.code = 0;
+   ih.checksum = 0;
+   ih.un.echo.id = 0x4343;
+   ih.un.echo.sequence = 0x4242;
+   // copy into place
+   memcpy(bytes + ICMP_START, &ih, sizeof(ih));
+   // add some payload
+   memcpy(bytes + ICMP_DATA, "\xbd\x3b\x78\xf8\xbc\x28\x41\x0f\xf7\xcd\x55\x91\xce\xa8\xe7\xac\xb3\xfe\x56\xd0\x6c\xa2\x1d\x41\xc9\x15\x8e\x74\xa0\x09\x4d\x2a\xe8\xd9\x76\xd9\x0c\x10\xb9\x65\x42\x11\xc9\x58\xbe\xce\x90\x89\x67\xaa\x56\xfa\xb7\x5e\xc0\xd0", 56);
+   // checksum
+   ip_checksum(bytes + ICMP_START, sizeof(ih) + 56, (uint16_t*)(bytes + ICMP_START + 2));
+
+   // let's see what we get
+   do_pak_handler(bytes, 100 + 2*config.vlan);
+
+   if (test_result_len) {
+     test_log("did not expect reply");
+     return 1;
+   }
+   return 0;
+}
+
 int test_junos_icmp_rpm(void) {
    u_char bytes[ETH_FRAME_LEN],*ptr;
    struct icmphdr ih;
@@ -727,6 +800,8 @@ int main(int argc, char * const argv[]) {
    run_test(test_checksum_ip, "produces valid ip checksum");
    run_test(test_checksum_tcp, "produces valid tcp checksum");
    run_test(test_icmp_ping, "responds to ICMP echo request");
+   run_test(test_df, "responds to ICMP echo request with DF set");
+   run_test(test_mf, "drops fragmented IPv4");
    run_test(test_junos_icmp_rpm, "responds to juniper ICMP RPM ping");
    run_test(test_icmp_timestamp, "responds to ICMP timestamp without junos RPM");
    run_test(test_udp_cisco_init, "responds to Cisco UDP IP SLA initialization");
