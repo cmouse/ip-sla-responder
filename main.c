@@ -245,7 +245,7 @@ int main(int argc, char * const argv[]) {
       generate_ip6_values(&config);
 
    // initialize pcap
-   p = pcap_create("eth1", errbuf);
+   p = pcap_create(ifr.ifr_name, errbuf);
    if (pcap_set_snaplen(p, 65535)) {
      pcap_perror(p, "pcap_set_snaplen");
      exit(1);
