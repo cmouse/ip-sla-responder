@@ -47,7 +47,7 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
       return 0;
    } else if (ntohs(*(uint16_t*)(buffer+UDP_DPORT)) >= config->cisco_port_low && 
               ntohs(*(uint16_t*)(buffer+UDP_DPORT)) <= config->cisco_port_high &&
-              length > UDP_DATA + 31) {
+              length > UDP_DATA + 15) {
       clock_gettime(CLOCK_REALTIME, &res);
       if (buffer[UDP_DATA+0x1] == 0x01) {
         // udp echo, just send it back.
@@ -142,7 +142,7 @@ int process_cisco6(u_char *buffer, size_t length, struct config_s *config, size_
       return 0;
    } else if (ntohs(*(uint16_t*)(buffer+UDP6_O_DSTPORT)) >= config->cisco_port_low &&
               ntohs(*(uint16_t*)(buffer+UDP6_O_DSTPORT)) <= config->cisco_port_high &&
-              length > UDP6_O_DATA + 31) {
+              length > UDP6_O_DATA + 15) {
       clock_gettime(CLOCK_REALTIME, &res);
       if (buffer[UDP6_O_DATA+0x1] == 0x01) {
         // do nothing? 
