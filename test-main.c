@@ -625,6 +625,69 @@ int test_udp_cisco_init(void) {
    return 0;
 }
 
+int test_udp_cisco_echo(void) {
+   u_char bytes[ETH_FRAME_LEN],*ptr;
+   struct udphdr uh;
+   struct timespec ts;
+
+   memset(bytes, 0, ETH_FRAME_LEN);
+   build_eth_header(DEFAULT_DST_MAC, DEFAULT_SRC_MAC, 42, ETH_P_IP, bytes);
+   build_ip_header(*DEFAULT_SRC_IP, *DEFAULT_DST_IP, 40, 17, bytes);
+   ptr = bytes + ip_start + sizeof(struct ip);
+   uh.source = htons(4242);
+   uh.dest   = htons(50505);
+   // packet has 8 bytes of data and 24 bytes of payload
+   uh.len = htons(24);
+   uh.check = 0;
+   // put it in place
+   memcpy(ptr, &uh, sizeof(uh));
+   ptr += sizeof(uh);
+
+   // fill with UDP echo specific data
+   *(uint16_t*)(ptr) = htons(1);
+   *(uint16_t*)(ptr + 0x2) = 0;
+   *(uint16_t*)(ptr + 0x4) = htons(24);
+
+   memcpy(ptr + 0x6, "ABABABABAB", 10);
+   // then calculate checksum
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, bytes+UDP_START, 40, (unsigned short*)(bytes+UDP_START+0x06));
+   // and that's it.
+
+   // emulate 0.1s delay
+   usleep(10000);
+   do_pak_handler(bytes, 58 + eth_o_vlan);
+
+   // did we get anything?
+   if (test_result_len != 58 + eth_o_vlan) {
+     test_log("result is not %u bytes long as expected, was %lu", 58+eth_o_vlan, test_result_len);
+     return 1;
+   }
+
+   if (assert_ip(test_result_buffer, *DEFAULT_DST_IP, *DEFAULT_SRC_IP, 40, 17)) return 1;
+
+   // checksum check
+   tcp4_checksum((u_char*)DEFAULT_SRC_IP, (u_char*)DEFAULT_DST_IP, 0x11, test_result_buffer+UDP_START, 16 + (UDP_DATA - UDP_START), (unsigned short*)(test_result_buffer+UDP_START+0x06));
+   if (*((unsigned short*)(test_result_buffer+UDP_START+0x06)) != 0x0) {
+      test_log("invalid TCP checksum, ended up with %02x", (unsigned short*)(test_result_buffer+UDP_START+0x06));
+      return 1;
+   }
+
+   // make sure it matches
+   ptr = test_result_buffer + UDP_DATA;
+
+   if (*(uint16_t*)(ptr) != htons(1)) {
+      test_log("invalid version number, expected 1, got %u", ntohs(*(uint16_t*)(ptr)));
+      return 1;
+   }
+
+   if (memcmp(ptr + 0x6, "ABABABABAB", 10)) {
+      test_log("invalid test pattern received");
+      return 1;
+   }
+
+   return 0;
+}
+
 int test_udp_cisco_jitter_type_2(void) {
    u_char bytes[ETH_FRAME_LEN],*ptr;
    struct udphdr uh;
@@ -807,6 +870,7 @@ int main(int argc, char * const argv[]) {
    run_test(test_udp_cisco_init, "responds to Cisco UDP IP SLA initialization");
    run_test(test_udp_cisco_jitter_type_2, "responds to Cisco UDP IP SLA jitter measurement (milliseconds)");
    run_test(test_udp_cisco_jitter_type_3, "responds to Cisco UDP IP SLA jitter measurement (microseconds)");
+   run_test(test_udp_cisco_echo, "responds to UDP echo");
    run_test(test_udp_junos_rpm, "responds to juniper UDP RPM ping");
    printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
    result = (tests_not_ok>0);
@@ -830,6 +894,7 @@ int main(int argc, char * const argv[]) {
    run_test(test_udp_cisco_init, "responds to Cisco UDP IP SLA initialization");
    run_test(test_udp_cisco_jitter_type_2, "responds to Cisco UDP IP SLA jitter measurement (milliseconds)");
    run_test(test_udp_cisco_jitter_type_3, "responds to Cisco UDP IP SLA jitter measurement (microseconds)");
+   run_test(test_udp_cisco_echo, "responds to UDP echo");
    run_test(test_udp_junos_rpm, "responds to juniper UDP RPM ping");
    printf("OK: %d NOT OK: %d SUCCESS %0.02f%%\n", tests_ok, tests_not_ok, (double)tests_ok/(double)(tests_ok+tests_not_ok)*100.0);
    result = (tests_not_ok>0);
