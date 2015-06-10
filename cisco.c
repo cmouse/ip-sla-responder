@@ -49,7 +49,9 @@ int process_cisco4(u_char *buffer, size_t length, struct config_s *config, size_
               ntohs(*(uint16_t*)(buffer+UDP_DPORT)) <= config->cisco_port_high &&
               length > UDP_DATA + 31) {
       clock_gettime(CLOCK_REALTIME, &res);
-      if (buffer[UDP_DATA+0x1] == 0x02) {
+      if (buffer[UDP_DATA+0x1] == 0x01) {
+        // udp echo, just send it back.
+      } else if (buffer[UDP_DATA+0x1] == 0x02) {
         // fill in ms accurate time from midnight, aka ICMP timestamp
         *(uint32_t*)(buffer + UDP_DATA + 0x8) = htonl(get_ts_utc(&res));
         // copy packet sequence number
