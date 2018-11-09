@@ -1,6 +1,9 @@
 Cisco IP-SLA / Juniper RPM responder
 ====================================
 
+ WARNING: (2018-11-09) This software is **NO LONGER** maintained, because I don't have hardware for it. If you wish to continue this work, feel free to do so.
+
+
 Contents
 --------
 
