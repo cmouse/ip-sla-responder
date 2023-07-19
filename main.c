@@ -246,6 +246,8 @@ int main(int argc, char * const argv[]) {
 
    // initialize pcap
    p = pcap_create(ifr.ifr_name, errbuf);
+   pcap_set_immediate_mode(p, 1);
+
    if (pcap_set_snaplen(p, 65535)) {
      pcap_perror(p, "pcap_set_snaplen");
      exit(1);
